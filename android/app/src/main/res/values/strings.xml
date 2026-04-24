@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">BuyInMinutes</string>
+    <string name="app_name">Buy In Minutes</string>
+    <string name="google_maps_api_key">AIzaSyD7PH748dyXjzDSDhat1m3CvvQAuRmD5eQ</string>
 </resources>
