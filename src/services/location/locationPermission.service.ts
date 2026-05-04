@@ -47,7 +47,6 @@ export const openLocationServicesSettings = async () => {
 
   await Linking.openSettings();
 };
-
 export const requestLocationPermission = async () => {
   if (Platform.OS === 'ios') {
     return requestIosLocationPermission();

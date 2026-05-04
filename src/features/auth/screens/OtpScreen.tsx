@@ -333,7 +333,7 @@ export default function OtpScreen({navigation, route}: Props) {
 
         throw new Error('Unable to login with this mobile number.');
       } catch (error) {
-        if (route.params.authFlow === 'signup' && isUserMissingError(error)) {
+        if (isUserMissingError(error)) {
           setTimeout(() => {
             navigation.replace('ProfileDetails', {
               mobile: route.params.mobile,

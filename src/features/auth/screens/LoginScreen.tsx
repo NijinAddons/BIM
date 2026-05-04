@@ -350,8 +350,6 @@ export default function LoginScreen({navigation}: Props) {
         '[Google Login] Firebase auth full response',
         serializeForLog({
           additionalUserInfo: userCredential.additionalUserInfo,
-          operationType: userCredential.operationType,
-          providerId: userCredential.providerId,
           user: userCredential.user,
         }),
       );

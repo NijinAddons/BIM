@@ -83,7 +83,6 @@ const getImageUrl = (imagePath: string) => {
 
 const getItemCode = (record: ProductFeedRecord) =>
   getString(record, ['item_code', 'name', 'id', 'sku', 'product_id']);
-
 const toProduct = (item: unknown, index: number): Product | null => {
   const record = asRecord(item);
 
@@ -174,7 +173,6 @@ export const fetchProducts = async (
       count: parsedProducts.length,
       products: parsedProducts,
     });
-
     if (parsedProducts.length === 0) {
       logger.warn(
         fallbackToMock

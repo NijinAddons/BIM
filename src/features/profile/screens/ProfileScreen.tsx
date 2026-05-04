@@ -126,7 +126,6 @@ export default function ProfileScreen() {
             },
           }
         : null;
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />

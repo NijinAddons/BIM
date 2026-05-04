@@ -67,7 +67,6 @@ const getFrappeErrorMessage = (body: string) => {
     return null;
   }
 };
-
 const parseResponseBody = <T>(body: string): T | null => {
   if (!body) {
     return null;

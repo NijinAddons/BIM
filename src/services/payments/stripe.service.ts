@@ -202,7 +202,6 @@ export const stripePaymentService = {
     };
 
     logger.log('[Stripe] createPaymentSheet request payload', payload);
-
     let result;
 
     try {

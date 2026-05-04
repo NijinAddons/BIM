@@ -120,7 +120,6 @@ export async function loadStoredCart() {
     notify();
   }
 }
-
 export function addProductToCart(product: Product) {
   const existingItem = cartItems.find(item => item.id === product.id);
   const nextQuantity = existingItem ? existingItem.quantity + 1 : 1;

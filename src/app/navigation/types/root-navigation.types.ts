@@ -1,7 +1,7 @@
-import { NavigatorScreenParams } from '@react-navigation/native';
+import {NavigatorScreenParams} from '@react-navigation/native';
 
-import { Product } from '../../../features/product/types';
-import { SavedAddressDetails } from '../../../features/profile/service';
+import {Product} from '../../../features/product/types';
+import {SavedAddressDetails} from '../../../features/profile/service';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -12,10 +12,10 @@ export type RootStackParamList = {
     mobile: string;
     phone: string;
   };
-  ProfileDetails: { mobile: string; phone: string };
+  ProfileDetails: {mobile: string; phone: string};
   MainTabs: NavigatorScreenParams<BottomTabParamList> | undefined;
-  ProductDetails: { product: Product };
-  CategoryDetails: { categoryTitle: string; sectionTitle: string };
+  ProductDetails: {product: Product};
+  CategoryDetails: {categoryTitle: string; sectionTitle: string};
   AddressSelection: undefined;
   ConfirmLocation: {
     address?: string;

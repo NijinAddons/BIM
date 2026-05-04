@@ -33,7 +33,6 @@ const itemPriceFields = [
   'uom',
   'valid_from',
 ];
-
 const getAuthHeaders = (): Record<string, string> => {
   if (!appConfig.frappeApiKey || !appConfig.frappeApiSecret) {
     return {};
@@ -172,7 +171,6 @@ export const frappeService = {
           throw error;
         }
       }
-
       const responseRecords = result.data?.data ?? result.data?.message ?? [];
       const pageRecords = Array.isArray(responseRecords) ? responseRecords : [];
 

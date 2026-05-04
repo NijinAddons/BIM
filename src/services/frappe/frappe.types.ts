@@ -36,7 +36,6 @@ export type WebshopProductRecord = {
 export type WebshopSettingsRecord = {
   products_per_page?: number | string | null;
 };
-
 export type WebsiteItemRecord = {
   item_code?: string | null;
   item_group?: string | null;

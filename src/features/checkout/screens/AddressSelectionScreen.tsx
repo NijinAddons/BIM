@@ -44,7 +44,6 @@ export default function AddressSelectionScreen() {
   );
   const [addressInput, setAddressInput] = React.useState('');
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [showAddAddressForm, setShowAddAddressForm] = React.useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -159,9 +158,7 @@ export default function AddressSelectionScreen() {
             />
           </Pressable>
 
-          <Pressable
-            onPress={addNewAddress}
-            style={styles.actionRow}>
+          <Pressable onPress={addNewAddress} style={styles.actionRow}>
             <View style={styles.actionRowLeft}>
               <View style={[styles.iconWrap, styles.addAddressIconWrap]}>
                 <MaterialCommunityIcons color="#7a4b12" name="plus" size={20} />
