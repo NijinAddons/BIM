@@ -8,13 +8,13 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
-
 target 'BuyInMinutes' do
+  rn_maps_path = File.dirname(`node --print "require.resolve('react-native-maps/package.json')"`)
+  pod 'react-native-maps/Google', :path => rn_maps_path
+
+  use_frameworks! :linkage => :static
+  $RNFirebaseAsStaticFramework = true
+
   config = use_native_modules!
 
   use_react_native!(
@@ -30,5 +30,13 @@ target 'BuyInMinutes' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |target|
+      next unless target.name.start_with?('RNFB')
+
+      target.build_configurations.each do |build_configuration|
+        build_configuration.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      end
+    end
   end
 end

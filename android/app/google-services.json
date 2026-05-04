@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "586858899535",
+    "project_id": "buy-in-minutes-b0a94",
+    "storage_bucket": "buy-in-minutes-b0a94.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:586858899535:android:f749f7843164534dc3223a",
+        "android_client_info": {
+          "package_name": "com.buyinminutes"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFXIydQEo7_y1PsRy_LRhTUW1MVZFiELo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
