@@ -13,6 +13,8 @@ export const appConfig = {
   verifyOtpUrl: `${frappeBaseUrl}/api/method/otp_app.api.verify_otp`,
   loginUrl: `${frappeBaseUrl}/api/method/otp_app.api.login`,
   completeSignupUrl: `${frappeBaseUrl}/api/method/otp_app.api.complete_signup`,
+  googleLoginUrl: `${frappeBaseUrl}/api/method/otp_app.firebase_auth.google_login`,
+  appleLoginUrl: `${frappeBaseUrl}/api/method/otp_app.apple_login.apple_login`,
   googleMapsApiKey: 'AIzaSyD7PH748dyXjzDSDhat1m3CvvQAuRmD5eQ',
   firebaseGoogleIosClientId:
     '586858899535-nc37gh2bmb63u92mk38us2dbrfblfhfk.apps.googleusercontent.com',

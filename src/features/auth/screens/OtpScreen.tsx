@@ -20,8 +20,15 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 import {RootStackParamList} from '../../../app/navigation/types/root-navigation.types';
 import {ApiError} from '../../../services/api/apiError';
+import {setStoredFrappeAuthCredentials} from '../../../services/frappe/frappeAuth';
 import {setUserProfile} from '../../profile/service';
-import {otpService} from '../service';
+import {getLoginAuthCredentials, otpService} from '../service';
+import {
+  getLoginUserProfile,
+  getOtpDeliveryMeta,
+  isExistingUserLoginResponse,
+  isUserMissingError,
+} from '../utils';
 
 type OtpNavProp = NativeStackNavigationProp<RootStackParamList, 'Otp'>;
 type OtpRouteProp = RouteProp<RootStackParamList, 'Otp'>;
@@ -36,143 +43,6 @@ type OtpVerifyModule = {
   getOtp: () => Promise<boolean>;
 };
 
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-
-  return null;
-};
-
-const getString = (
-  record: Record<string, unknown> | null,
-  keys: string[],
-) => {
-  if (!record) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return undefined;
-};
-
-const getLoginPayload = (response: {data?: unknown; message?: unknown}) => {
-  return asRecord(response.data) ?? asRecord(response.message);
-};
-
-const getNestedLoginPayload = (response: {data?: unknown; message?: unknown}) => {
-  const payload = getLoginPayload(response);
-
-  return (
-    asRecord(payload?.data) ??
-    asRecord(payload?.message) ??
-    payload
-  );
-};
-
-const getLoginUserProfile = (response: {data?: unknown; message?: unknown}) => {
-  const payload = getNestedLoginPayload(response);
-  const user =
-    asRecord(payload?.user) ??
-    asRecord(payload?.data) ??
-    asRecord(payload?.message) ??
-    payload;
-
-  if (!user) {
-    return null;
-  }
-
-  const name =
-    getString(user, ['full_name', 'fullName', 'username', 'name']) ?? '';
-  const email = getString(user, ['email', 'email_id']) ?? '';
-  const mobile = getString(user, ['phone', 'mobile', 'mobile_no']) ?? '';
-
-  if (!name && !email && !mobile) {
-    return null;
-  }
-
-  return {
-    email,
-    mobile,
-    name,
-  };
-};
-
-const isExistingUserLoginResponse = (response: {data?: unknown; message?: unknown}) => {
-  if (getLoginUserProfile(response)) {
-    return true;
-  }
-
-  const payload = getNestedLoginPayload(response);
-
-  if (!payload) {
-    return false;
-  }
-
-  const explicitExisting =
-    payload.user_exists ??
-    payload.userExists ??
-    payload.existing_user ??
-    payload.existingUser;
-
-  if (typeof explicitExisting === 'boolean') {
-    return explicitExisting;
-  }
-
-  const explicitNewUser = payload.is_new_user ?? payload.isNewUser;
-
-  if (typeof explicitNewUser === 'boolean') {
-    return !explicitNewUser;
-  }
-
-  const messageText = getString(payload, ['status', 'message', 'detail'])?.toLowerCase() ?? '';
-
-  if (
-    messageText.includes('not exist') ||
-    messageText.includes('new user') ||
-    messageText.includes('signup')
-  ) {
-    return false;
-  }
-
-  if (
-    messageText.includes('login success') ||
-    messageText.includes('logged in') ||
-    messageText.includes('user exists')
-  ) {
-    return true;
-  }
-
-  return false;
-};
-
-const isUserMissingError = (error: unknown) => {
-  if (!(error instanceof ApiError)) {
-    return false;
-  }
-
-  if (error.status === 404) {
-    return true;
-  }
-
-  const body = error.body?.toLowerCase() ?? '';
-
-  return (
-    body.includes('not found') ||
-    body.includes('user does not exist') ||
-    body.includes('customer does not exist') ||
-    body.includes('new user') ||
-    body.includes('signup')
-  );
-};
-
 const getOtpVerifyModule = (): OtpVerifyModule | null => {
   try {
     return NativeModules.OtpVerify ?? null;
@@ -181,15 +51,73 @@ const getOtpVerifyModule = (): OtpVerifyModule | null => {
   }
 };
 
+const DEFAULT_OTP_EXPIRY_SECONDS = 60;
+
+const normalizePositiveNumber = (value?: number) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+
+  return Math.floor(value);
+};
+
+const getOtpAttemptErrorMessage = (error: unknown) => {
+  if (error instanceof ApiError && error.body) {
+    try {
+      const parsedBody = JSON.parse(error.body) as {message?: string | Record<string, unknown>};
+      const nestedMessage =
+        typeof parsedBody.message === 'object' &&
+        parsedBody.message &&
+        typeof parsedBody.message.message === 'string'
+          ? parsedBody.message.message
+          : '';
+      const directMessage =
+        typeof parsedBody.message === 'string' ? parsedBody.message : '';
+
+      return (directMessage || nestedMessage || error.body).toLowerCase();
+    } catch {
+      return error.body.toLowerCase();
+    }
+  }
+
+  if (error instanceof Error) {
+    return error.message.toLowerCase();
+  }
+
+  return '';
+};
+
+const isOtpAttemptConsumedError = (error: unknown) => {
+  const message = getOtpAttemptErrorMessage(error);
+
+  return (
+    message.includes('invalid otp') ||
+    message.includes('incorrect otp') ||
+    message.includes('invalid code') ||
+    message.includes('incorrect code') ||
+    message.includes('otp expired') ||
+    message.includes('expired otp') ||
+    message.includes('invalid verification code')
+  );
+};
+
 export default function OtpScreen({navigation, route}: Props) {
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
+  const initialExpiresIn =
+    normalizePositiveNumber(route.params.expiresIn) ?? DEFAULT_OTP_EXPIRY_SECONDS;
+  const initialMaxAttempts = normalizePositiveNumber(route.params.maxAttempts) ?? null;
   const [otp, setOtp] = useState('');
-  const [resendIn, setResendIn] = useState(60);
+  const [resendIn, setResendIn] = useState(initialExpiresIn);
+  const [maxAttempts, setMaxAttempts] = useState<number | null>(initialMaxAttempts);
+  const [remainingAttempts, setRemainingAttempts] = useState<number | null>(
+    initialMaxAttempts,
+  );
   const [isResending, setIsResending] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState('');
   const isValidOtp = useMemo(() => /^\d{6}$/.test(otp), [otp]);
+  const isVerifyDisabled = !isValidOtp || isVerifying || remainingAttempts === 0;
 
   useEffect(() => {
     if (resendIn <= 0) {
@@ -286,6 +214,11 @@ export default function OtpScreen({navigation, route}: Props) {
   };
 
   const onVerify = async () => {
+    if (remainingAttempts === 0) {
+      Alert.alert('Attempts exhausted', 'Please resend OTP to get a new code.');
+      return;
+    }
+
     if (!isValidOtp) {
       Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP.');
       return;
@@ -298,6 +231,49 @@ export default function OtpScreen({navigation, route}: Props) {
       setVerificationMessage('OTP verified successfully.');
 
       if (route.params.authFlow === 'signup') {
+        const socialEmail =
+          typeof route.params.email === 'string' ? route.params.email.trim() : '';
+        const socialName =
+          typeof route.params.name === 'string' ? route.params.name.trim() : '';
+        const socialCustomer =
+          typeof route.params.customer === 'string' ? route.params.customer : '';
+
+        if (socialEmail && socialName) {
+          const socialSignupPayload = {
+            email: socialEmail,
+            fullName: socialName,
+            full_name: socialName,
+            phoneNumber: route.params.phone,
+            phone: route.params.phone,
+            username: socialName,
+          };
+
+          console.log('[OTP Verify] social complete signup request', socialSignupPayload);
+
+          const socialSignupResponse = await otpService.completeSignup(
+            socialSignupPayload,
+          );
+          const completedSignupProfile = getLoginUserProfile(socialSignupResponse.data);
+
+          console.log('[OTP Verify] social complete signup response', socialSignupResponse.data);
+
+          await setUserProfile(
+            {
+              address: '',
+              customer: socialCustomer,
+              email: completedSignupProfile?.email || socialEmail,
+              mobile: completedSignupProfile?.mobile || route.params.phone,
+              name: completedSignupProfile?.name || socialName,
+            },
+            {profileCompleted: true},
+          );
+
+          setTimeout(() => {
+            navigation.replace('MainTabs');
+          }, 900);
+          return;
+        }
+
         setTimeout(() => {
           navigation.replace('ProfileDetails', {
             mobile: route.params.mobile,
@@ -313,11 +289,17 @@ export default function OtpScreen({navigation, route}: Props) {
 
         const existingUserProfile = getLoginUserProfile(loginResponse.data);
         const isExistingUser = isExistingUserLoginResponse(loginResponse.data);
+        const authCredentials = getLoginAuthCredentials(loginResponse.data);
 
         if (isExistingUser) {
+          if (authCredentials) {
+            await setStoredFrappeAuthCredentials(authCredentials);
+          }
+
           await setUserProfile(
             {
               address: '',
+              customer: existingUserProfile?.customer ?? '',
               email: existingUserProfile?.email ?? '',
               mobile: existingUserProfile?.mobile || route.params.phone,
               name: existingUserProfile?.name || 'BIM User',
@@ -346,6 +328,16 @@ export default function OtpScreen({navigation, route}: Props) {
         throw error;
       }
     } catch (error) {
+      if (isOtpAttemptConsumedError(error)) {
+        setRemainingAttempts(prev => {
+          if (prev === null) {
+            return prev;
+          }
+
+          return Math.max(prev - 1, 0);
+        });
+      }
+
       const errorMessage =
         error instanceof Error && error.message
           ? error.message
@@ -359,10 +351,17 @@ export default function OtpScreen({navigation, route}: Props) {
   const onResend = async () => {
     try {
       setIsResending(true);
-      await otpService.sendOtp(route.params.phone);
+      const resendResponse = await otpService.sendOtp(route.params.phone);
+      const otpDeliveryMeta = getOtpDeliveryMeta(resendResponse.data);
+      const nextExpiresIn =
+        normalizePositiveNumber(otpDeliveryMeta.expiresIn) ?? DEFAULT_OTP_EXPIRY_SECONDS;
+      const nextMaxAttempts = normalizePositiveNumber(otpDeliveryMeta.maxAttempts) ?? null;
       Alert.alert('OTP sent', 'A new OTP has been sent.');
       setOtp('');
-      setResendIn(60);
+      setVerificationMessage('');
+      setResendIn(nextExpiresIn);
+      setMaxAttempts(nextMaxAttempts);
+      setRemainingAttempts(nextMaxAttempts);
       inputRef.current?.focus();
     } catch {
       Alert.alert('OTP failed', 'Unable to resend OTP. Please try again.');
@@ -425,11 +424,11 @@ export default function OtpScreen({navigation, route}: Props) {
 
           <TouchableOpacity
             activeOpacity={0.9}
-            disabled={!isValidOtp || isVerifying}
+            disabled={isVerifyDisabled}
             onPress={onVerify}
             style={[
               styles.button,
-              isValidOtp && !isVerifying && styles.buttonEnabled,
+              !isVerifyDisabled && styles.buttonEnabled,
             ]}>
             <View style={styles.buttonContent}>
               {isVerifying ? <ActivityIndicator color="#ffffff" size="small" /> : null}
@@ -442,6 +441,14 @@ export default function OtpScreen({navigation, route}: Props) {
 
           {verificationMessage ? (
             <Text style={styles.verificationMessage}>{verificationMessage}</Text>
+          ) : null}
+
+          {maxAttempts !== null ? (
+            <Text style={styles.attemptsText}>
+              {remainingAttempts === 0
+                ? 'No attempts left. Resend OTP to continue.'
+                : `Attempts left: ${remainingAttempts}/${maxAttempts}`}
+            </Text>
           ) : null}
 
           <TouchableOpacity
@@ -567,6 +574,13 @@ const styles = StyleSheet.create({
     color: '#1f9d55',
     fontSize: 14,
     fontWeight: '700',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  attemptsText: {
+    color: '#666666',
+    fontSize: 13,
+    lineHeight: 18,
     marginTop: 12,
     textAlign: 'center',
   },

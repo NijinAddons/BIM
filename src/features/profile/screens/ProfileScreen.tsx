@@ -15,7 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { RootStackParamList } from '../../../app/navigation/types/root-navigation.types';
 import { bag, support, wallet } from '../../../assets/images';
-import { CustomAlert } from '../../../components/ui';
+import { CustomAlert } from '../../../components';
+import { clearStoredFrappeAuthCredentials } from '../../../services/frappe/frappeAuth';
 import { colors } from '../../../theme/colors';
 import { APP_NAME, APP_VERSION } from '../../../utils/constants/app.constants';
 import { clearCart, clearLinkedSalesOrder } from '../../cart/service';
@@ -28,7 +29,7 @@ import {
 
 type InfoItemRoute = Extract<
   keyof RootStackParamList,
-  'EditProfile' | 'MyAddresses' | 'Wishlist'
+  'EditProfile' | 'MyAddresses' | 'Orders' | 'Wishlist'
 >;
 
 type InfoItem = {
@@ -79,6 +80,7 @@ export default function ProfileScreen() {
     await clearLinkedSalesOrder();
     await clearSavedAddresses();
     clearCart();
+    await clearStoredFrappeAuthCredentials();
     await clearUserProfile();
     navigation.replace('Login');
   };
@@ -87,6 +89,7 @@ export default function ProfileScreen() {
     await clearLinkedSalesOrder();
     await clearSavedAddresses();
     clearCart();
+    await clearStoredFrappeAuthCredentials();
     await clearUserProfile();
     navigation.replace('Login');
   };
@@ -155,7 +158,9 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.cardRow}>
-          <View style={[styles.infoCard, styles.ordersCard]}>
+          <Pressable
+            onPress={() => navigation.navigate('Orders')}
+            style={[styles.infoCard, styles.ordersCard]}>
             <View style={[styles.cardAccent, styles.ordersAccent]} />
             <View style={styles.cardHeader}>
               <View style={[styles.cardIconWrap, styles.ordersIconWrap]}>
@@ -163,7 +168,7 @@ export default function ProfileScreen() {
               </View>
               <Text style={styles.cardTitle}>Your Orders</Text>
             </View>
-          </View>
+          </Pressable>
 
           <View style={[styles.infoCard, styles.moneyCard]}>
             <View style={[styles.cardAccent, styles.moneyAccent]} />

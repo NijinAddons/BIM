@@ -2,19 +2,28 @@ import {appConfig} from '../../app/config/appConfig';
 import {CartItem} from '../../features/cart/types';
 import {apiClient} from '../api/apiClient';
 import {ApiError} from '../api/apiError';
+import {getFrappeAuthHeaders} from '../frappe/frappeAuth';
 import {logger} from '../../utils/logger';
 
 type CreatePaymentSheetRequest = {
   address?: string;
   amount?: number;
   amount_minor?: number;
+  customer?: string;
+  customer_id?: string;
+  customer_email?: string;
+  customer_name?: string;
+  customer_phone?: string;
   currency?: string;
+  email?: string;
   items?: Array<{
     item_code: string;
     item_name: string;
     qty: number;
     rate: number;
   }>;
+  name?: string;
+  phone?: string;
   reference_doctype?: string;
   reference_name?: string;
 };
@@ -175,6 +184,10 @@ export const stripePaymentService = {
     amount: _amount,
     currency: _currency,
     address: _address,
+    customer: _customer,
+    customerEmail: _customerEmail,
+    customerName: _customerName,
+    customerPhone: _customerPhone,
     items: _items,
     referenceDoctype: _referenceDoctype,
     referenceName: _referenceName,
@@ -182,6 +195,10 @@ export const stripePaymentService = {
     amount: number;
     currency: string;
     address: string;
+    customer?: string;
+    customerEmail?: string;
+    customerName?: string;
+    customerPhone?: string;
     items: CartItem[];
     referenceDoctype?: string;
     referenceName?: string;
@@ -190,13 +207,21 @@ export const stripePaymentService = {
       address: _address,
       amount: Number(_amount.toFixed(2)),
       amount_minor: Math.round(_amount * 100),
+      customer: _customer,
+      customer_id: _customer,
+      customer_email: _customerEmail,
+      customer_name: _customerName,
+      customer_phone: _customerPhone,
       currency: _currency.toUpperCase(),
+      email: _customerEmail,
       items: _items.map(item => ({
         item_code: item.id,
         item_name: item.name,
         qty: item.quantity,
         rate: item.price,
       })),
+      name: _customerName,
+      phone: _customerPhone,
       reference_doctype: _referenceDoctype,
       reference_name: _referenceName,
     };
@@ -209,6 +234,7 @@ export const stripePaymentService = {
         appConfig.stripePaymentSheetUrl,
         {
           body: payload as unknown as Record<string, unknown>,
+          headers: getFrappeAuthHeaders(),
           logLabel: 'Stripe PaymentSheet ERPNext response',
         },
       );

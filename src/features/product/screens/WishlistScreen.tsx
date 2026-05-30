@@ -20,7 +20,7 @@ import {
   updateCartItemQuantity,
 } from '../../cart/service';
 import {getUserProfile, subscribeProfile} from '../../profile/service';
-import type {Product} from '../types';
+import type {Product} from '../data/mockData';
 import {
   getWishlistItems,
   loadStoredWishlist,
@@ -66,6 +66,7 @@ export default function WishlistScreen() {
   const [wishlistToastVisible, setWishlistToastVisible] = React.useState(false);
   const [wishlistToastMessage, setWishlistToastMessage] = React.useState('Removed from wishlist');
   const displayedLocation = getWishlistLocationLabel(profile.address);
+  const canGoBack = navigation.canGoBack();
 
   useFocusEffect(
     React.useCallback(() => {
@@ -139,9 +140,13 @@ export default function WishlistScreen() {
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View style={[styles.header, {paddingTop: insets.top + 6}]}>
         <View style={styles.headerRow}>
-          <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
-            <Text style={styles.backArrow}>‹</Text>
-          </Pressable>
+          {canGoBack ? (
+            <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
+              <Text style={styles.backArrow}>‹</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.headerSpacer} />
+          )}
           <View style={styles.headerTextWrap}>
             <Text style={styles.headerTitle}>Your wishlist</Text>
             <Text numberOfLines={1} style={styles.headerSubtitle}>
@@ -309,6 +314,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: 34,
     justifyContent: 'center',
+    width: 34,
+  },
+  headerSpacer: {
     width: 34,
   },
   backArrow: {

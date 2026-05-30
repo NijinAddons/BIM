@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type UserProfile = {
   address: string;
+  customer?: string;
   email: string;
   mobile: string;
   name: string;
@@ -11,6 +12,7 @@ const PROFILE_STORAGE_KEY = '@buy_in_minutes_profile';
 
 const defaultUserProfile: UserProfile = {
   address: '',
+  customer: '',
   email: 'name@example.com',
   mobile: '',
   name: 'BIM User',
@@ -62,7 +64,14 @@ export async function loadStoredProfile() {
       return false;
     }
 
-    currentUserProfile = parsedValue.profile;
+    currentUserProfile = {
+      ...defaultUserProfile,
+      ...parsedValue.profile,
+      customer:
+        typeof parsedValue.profile.customer === 'string'
+          ? parsedValue.profile.customer
+          : '',
+    };
     hasCompletedProfile =
       Boolean(parsedValue.profileCompleted) ||
       (Boolean(currentUserProfile.name.trim()) &&
@@ -81,7 +90,12 @@ export async function setUserProfile(
   profile: UserProfile,
   options?: {profileCompleted?: boolean},
 ) {
-  currentUserProfile = profile;
+  currentUserProfile = {
+    ...defaultUserProfile,
+    ...currentUserProfile,
+    ...profile,
+    customer: typeof profile.customer === 'string' ? profile.customer : currentUserProfile.customer,
+  };
   hasCompletedProfile =
     options?.profileCompleted !== undefined
       ? options.profileCompleted

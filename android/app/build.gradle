@@ -79,9 +79,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.buyinminutes"
+    namespace "com.addons.buyinminutes"
     defaultConfig {
-        applicationId "com.buyinminutes"
+        applicationId "com.addons.buyinminutes"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

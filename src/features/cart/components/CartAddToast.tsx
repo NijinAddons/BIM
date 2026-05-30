@@ -1,12 +1,16 @@
 import React from 'react';
+import {useNavigation} from '@react-navigation/native';
+import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Pressable, StyleSheet, Text, View, useWindowDimensions} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
-import {getLastCartAddition, subscribeCartAdditions} from '../service';
+import {RootStackParamList} from '../../../app/navigation/types/root-navigation.types';
+import {getCartItems, getLastCartAddition, subscribeCartAdditions} from '../service';
 
 export default function CartAddToast() {
   const insets = useSafeAreaInsets();
   const {width} = useWindowDimensions();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [addition, setAddition] = React.useState(getLastCartAddition());
   const [visible, setVisible] = React.useState(false);
 
@@ -17,39 +21,36 @@ export default function CartAddToast() {
     });
   }, []);
 
-  React.useEffect(() => {
-    if (!visible || !addition) {
-      return;
-    }
-
-    const timeoutId = setTimeout(() => {
-      setVisible(false);
-    }, 2200);
-
-    return () => clearTimeout(timeoutId);
-  }, [addition, visible]);
-
   if (!visible || !addition) {
     return null;
   }
 
-  const compactName =
-    addition.name.length > 28 ? `${addition.name.slice(0, 28).trimEnd()}...` : addition.name;
+  const totalItemCount = getCartItems().reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <View style={[styles.wrap, {bottom: insets.bottom + 18}]}>
-        <Pressable
+      <View style={[styles.wrap, {bottom: insets.bottom + 84}]}>
+        <View
           accessibilityRole="alert"
-          onPress={() => setVisible(false)}
           style={[styles.toast, {maxWidth: Math.min(width - 24, 360)}]}>
-          <Text numberOfLines={1} style={styles.title}>
-            Added to cart
-          </Text>
-          <Text numberOfLines={1} style={styles.subtitle}>
-            {compactName} • Qty {addition.quantity}
-          </Text>
-        </Pressable>
+          <View style={styles.copyWrap}>
+            <Text numberOfLines={1} style={styles.title}>
+              View Cart
+            </Text>
+            <Text numberOfLines={1} style={styles.subtitle}>
+              {totalItemCount} {totalItemCount === 1 ? 'item' : 'items'} in cart
+            </Text>
+          </View>
+          <Pressable
+            hitSlop={8}
+            onPress={() => {
+              setVisible(false);
+              navigation.navigate('MainTabs', {screen: 'Cart'});
+            }}
+            style={({pressed}) => [styles.action, pressed && styles.actionPressed]}>
+            <Text style={styles.actionText}>View Cart</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -63,8 +64,11 @@ const styles = StyleSheet.create({
     right: 12,
   },
   toast: {
+    alignItems: 'center',
     backgroundColor: '#1f9d55',
     borderRadius: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     minWidth: 220,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -72,6 +76,10 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 8},
     shadowOpacity: 0.18,
     shadowRadius: 16,
+  },
+  copyWrap: {
+    flex: 1,
+    marginRight: 12,
   },
   title: {
     color: '#ffffff',
@@ -83,5 +91,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     marginTop: 2,
+  },
+  action: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderColor: 'rgba(255,255,255,0.28)',
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: 14,
+  },
+  actionPressed: {
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  actionText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

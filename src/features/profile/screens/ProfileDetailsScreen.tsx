@@ -34,6 +34,53 @@ type Props = {
   route: ProfileDetailsRouteProp;
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return null;
+};
+
+const getString = (record: Record<string, unknown> | null, keys: string[]) => {
+  if (!record) {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    const value = record[key];
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return undefined;
+};
+
+const getCustomerFromSignupResponse = (response: {data?: unknown; message?: unknown}) => {
+  const payload = asRecord(response.data) ?? asRecord(response.message);
+  const nestedPayload =
+    asRecord(payload?.data) ??
+    asRecord(payload?.message) ??
+    payload;
+  const customerRecord =
+    asRecord(nestedPayload?.customer) ??
+    null;
+
+  return (
+    getString(customerRecord, ['name', 'customer_name', 'customerName']) ??
+    getString(nestedPayload, [
+      'customer',
+      'customer_name',
+      'customerName',
+      'customer_id',
+      'customerId',
+    ]) ??
+    ''
+  );
+};
+
 export default function ProfileDetailsScreen({navigation, route}: Props) {
   const insets = useSafeAreaInsets();
   const [username, setUsername] = useState('');
@@ -84,6 +131,7 @@ export default function ProfileDetailsScreen({navigation, route}: Props) {
       await setUserProfile(
         {
           address: '',
+          customer: getCustomerFromSignupResponse(signupResponse.data),
           email: signupPayload.email,
           mobile: route.params.phone,
           name: signupPayload.username,

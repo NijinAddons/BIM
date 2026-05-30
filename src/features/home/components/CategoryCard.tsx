@@ -2,7 +2,7 @@ import React from 'react';
 import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 
 import {colors} from '../../../theme/colors';
-import {Category} from '../../product/types';
+import {Category} from '../../product/service';
 
 type Props = {
   item: Category;
@@ -43,17 +43,16 @@ export default function CategoryCard({item, onPress, selected = false}: Props) {
 const styles = StyleSheet.create({
   card: {
     alignItems: 'center',
-    marginRight: 12,
-    width: 84,
+    width: '100%',
   },
   thumb: {
     alignItems: 'center',
-    borderRadius: 32,
-    height: 64,
+    borderRadius: 18,
+    height: 96,
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     overflow: 'hidden',
-    width: 64,
+    width: 96,
   },
   thumbSelected: {
     borderColor: '#121212',
@@ -67,6 +66,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontWeight: '700',
+    minHeight: 38,
     textAlign: 'center',
   },
   nameSelected: {

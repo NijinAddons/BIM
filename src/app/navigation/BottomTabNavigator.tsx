@@ -7,9 +7,9 @@ import {StyleSheet, Text, View} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import CartScreen from '../../features/cart/screens/CartScreen';
+import CategoriesScreen from '../../features/home/screens/CategoriesScreen';
 import HomeScreen from '../../features/home/screens/HomeScreen';
 import ProfileScreen from '../../features/profile/screens/ProfileScreen';
-import SearchScreen from '../../features/search/screens/SearchScreen';
 import {colors} from '../../theme/colors';
 import {BottomTabParamList} from './types/root-navigation.types';
 
@@ -28,10 +28,10 @@ const TAB_CONFIG: Record<
     inactiveIcon: 'home-outline',
     label: 'Home',
   },
-  Search: {
-    activeIcon: 'magnify',
-    inactiveIcon: 'magnify',
-    label: 'Search',
+  Categories: {
+    activeIcon: 'view-grid',
+    inactiveIcon: 'view-grid-outline',
+    label: 'Categories',
   },
   Cart: {
     activeIcon: 'cart',
@@ -92,7 +92,7 @@ export default function BottomTabNavigator() {
   return (
     <Tab.Navigator screenOptions={getScreenOptions}>
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Search" component={SearchScreen} />
+      <Tab.Screen name="Categories" component={CategoriesScreen} />
       <Tab.Screen name="Cart" component={CartScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>

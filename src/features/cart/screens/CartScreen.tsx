@@ -7,6 +7,7 @@ import { useStripe } from '@stripe/stripe-react-native';
 import {
   Alert,
   Image,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -21,7 +22,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { CustomAlert } from '../../../components/ui';
+import { CustomAlert } from '../../../components';
 import { colors } from '../../../theme/colors';
 import { appConfig } from '../../../app/config/appConfig';
 import { RootStackParamList } from '../../../app/navigation/types/root-navigation.types';
@@ -30,14 +31,18 @@ import { logger } from '../../../utils/logger';
 import {
   clearLinkedSalesOrder,
   clearCart,
-  getCartItems,
   ensureSalesOrderForCart,
+  getCartItems,
+  generateSalesInvoiceForSalesOrder,
   getLinkedSalesOrderName,
+  placeOrder,
   getSalesOrderPaymentDetails,
   getSalesOrderSyncErrorMessage,
+  scheduleCartSalesOrderSync,
   subscribeCart,
   updateCartItemQuantity,
 } from '../service';
+import {createLocalOrder, updateLocalOrder} from '../../orders';
 import {
   buildSavedAddressDetailLines,
   getSavedAddresses,
@@ -51,6 +56,40 @@ import {
 } from '../../profile/service';
 
 const formatMoney = (value: number) => `AED ${value.toFixed(2)}`;
+const getStripeCustomerName = (name: string) => {
+  const trimmedName = name.trim();
+  return trimmedName && trimmedName !== 'BIM User' ? trimmedName : undefined;
+};
+
+const getStripeCustomerEmail = (email: string) => {
+  const trimmedEmail = email.trim();
+  return trimmedEmail && trimmedEmail !== 'name@example.com'
+    ? trimmedEmail
+    : undefined;
+};
+
+const getStripeCustomerPhone = (mobile: string) => {
+  const trimmedMobile = mobile.trim();
+  return trimmedMobile || undefined;
+};
+
+const getWhatsAppPhoneNumber = (mobile: string) => {
+  const digits = mobile.replace(/\D/g, '');
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.startsWith('971')) {
+    return digits;
+  }
+
+  if (digits.startsWith('0')) {
+    return `971${digits.slice(1)}`;
+  }
+
+  return digits;
+};
 
 type CartScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -82,13 +121,53 @@ export default function CartScreen() {
 
   useEffect(() => {
     setIsPaymentSheetReady(false);
-    setLinkedSalesOrderName(null);
-    clearLinkedSalesOrder().catch(() => undefined);
-  }, [cartItems, profile.address]);
+    if (cartItems.length === 0) {
+      setLinkedSalesOrderName(null);
+      clearLinkedSalesOrder().catch(() => undefined);
+    }
+  }, [
+    cartItems,
+    profile.address,
+    profile.customer,
+    profile.email,
+    profile.mobile,
+    profile.name,
+  ]);
 
   useEffect(() => {
     loadStoredAddresses().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (cartItems.length === 0) {
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      scheduleCartSalesOrderSync(cartItems)
+        .then(nextLinkedSalesOrderName => {
+          if (nextLinkedSalesOrderName) {
+            setLinkedSalesOrderName(nextLinkedSalesOrderName);
+          }
+        })
+        .catch(error => {
+          logger.log('[Sales Order] background cart sync failed', {
+            error,
+          });
+        });
+    }, 300);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [
+    cartItems,
+    profile.address,
+    profile.customer,
+    profile.email,
+    profile.mobile,
+    profile.name,
+  ]);
 
   const itemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
   const subtotal = cartItems.reduce(
@@ -101,6 +180,10 @@ export default function CartScreen() {
     profile.address || 'Add your delivery address in profile';
   const hasSavedAddresses = savedAddresses.length > 0;
   const shouldEditFetchedLocation = Boolean(profile.address.trim()) && !hasSavedAddresses;
+  const stripeCustomerName = getStripeCustomerName(profile.name);
+  const stripeCustomerEmail = getStripeCustomerEmail(profile.email);
+  const stripeCustomerPhone = getStripeCustomerPhone(profile.mobile);
+  const whatsappPhoneNumber = getWhatsAppPhoneNumber(profile.mobile);
   const requiresLoginToProceed =
     !profile.mobile.trim() ||
     !profile.email.trim() ||
@@ -155,46 +238,54 @@ export default function CartScreen() {
       return;
     }
 
-    if (!stripePaymentService.isConfigured()) {
-      const missingConfig = stripePaymentService.getMissingConfig();
-
-      const blockedPayload = {
-        missingConfig,
-        message: `Add ${missingConfig.join(
-          ' and ',
-        )} in appConfig before accepting payments.`,
-        reason: 'missing_stripe_config',
-      };
-      logger.log('[Place Order] blocked', blockedPayload);
-      console.warn('[Place Order] blocked', blockedPayload);
-      return;
-    }
-
     try {
       setIsPaymentProcessing(true);
+      const cartSnapshot = cartItems.map(item => ({...item}));
+      const localOrder = await createLocalOrder({
+        address: profile.address,
+        customerEmail: profile.email,
+        customerMobile: profile.mobile,
+        customerName: profile.name,
+        deliveryFee,
+        items: cartSnapshot,
+        subtotal,
+        total: grandTotal,
+      });
 
-      const nextLinkedSalesOrderName = await ensureSalesOrderForCart(cartItems);
+      clearCart();
+      setIsPaymentSheetReady(false);
+      setLinkedSalesOrderName(null);
+      navigation.navigate('Orders');
 
-      const salesOrderPayload = {
-        linkedSalesOrderName: nextLinkedSalesOrderName,
-        referenceDoctype: 'Sales Order',
-      };
-      logger.log('[Place Order] sales order ready', salesOrderPayload);
-      console.log('[Place Order] sales order ready', salesOrderPayload);
+      void updateLocalOrder(localOrder.id, {
+        backendStatus: 'Syncing with ERPNext',
+        syncState: 'syncing',
+      });
 
-      if (!nextLinkedSalesOrderName) {
-        const blockedPayload = {
-          message:
-            'Unable to create the sales order for this cart. Please try again.',
-          reason: 'missing_sales_order',
-        };
-        logger.log('[Place Order] blocked', blockedPayload);
-        console.warn('[Place Order] blocked', blockedPayload);
-        return;
-      }
+      void placeOrder(cartSnapshot)
+        .then(async salesOrderPayload => {
+          logger.log('[Place Order] background sales order ready', salesOrderPayload);
+          await updateLocalOrder(localOrder.id, {
+            backendOrderName: salesOrderPayload.linkedSalesOrderName,
+            backendStatus:
+              salesOrderPayload.salesOrder?.status?.toString().trim() || 'Order placed',
+            errorMessage: '',
+            syncState: 'confirmed',
+          });
+          await clearLinkedSalesOrder();
+        })
+        .catch(async error => {
+          const salesOrderErrorMessage = getSalesOrderSyncErrorMessage(error);
 
-      setLinkedSalesOrderName(nextLinkedSalesOrderName);
-      setIsPaymentSheetReady(true);
+          logger.log('[Stripe] Place Order background error', error);
+          console.error('[Stripe] Place Order background error', error);
+          await updateLocalOrder(localOrder.id, {
+            backendStatus: 'ERPNext sync failed',
+            errorMessage: salesOrderErrorMessage,
+            syncState: 'failed',
+          });
+          await clearLinkedSalesOrder();
+        });
     } catch (error) {
       const salesOrderErrorMessage = getSalesOrderSyncErrorMessage(error);
 
@@ -233,6 +324,10 @@ export default function CartScreen() {
         address: profile.address,
         amount: paymentReference.amount,
         currency: paymentReference.currency,
+        customer: profile.customer,
+        customerEmail: stripeCustomerEmail,
+        customerName: stripeCustomerName,
+        customerPhone: stripeCustomerPhone,
         items: cartItems,
         referenceDoctype: paymentReference.referenceDoctype,
         referenceName: paymentReference.referenceName,
@@ -253,9 +348,9 @@ export default function CartScreen() {
           merchantCountryCode: 'AE',
         },
         defaultBillingDetails: {
-          name: profile.name,
-          email: profile.email,
-          phone: profile.mobile,
+          name: stripeCustomerName,
+          email: stripeCustomerEmail,
+          phone: stripeCustomerPhone,
           address: {
             country: 'AE',
           },
@@ -384,6 +479,59 @@ export default function CartScreen() {
   const completeProfile = () => {
     setIsProfileAlertVisible(false);
     navigation.navigate('Login');
+  };
+
+  const onGenerateSalesInvoice = async () => {
+    if (!whatsappPhoneNumber) {
+      Alert.alert(
+        'Mobile number required',
+        'Please complete your profile mobile number before sending the sales invoice.',
+      );
+      return;
+    }
+
+    try {
+      setIsPaymentProcessing(true);
+
+      const currentLinkedSalesOrderName =
+        linkedSalesOrderName ?? (await ensureSalesOrderForCart(cartItems));
+
+      if (!currentLinkedSalesOrderName) {
+        throw new Error('Sales Order reference is missing for invoice generation.');
+      }
+
+      const {pdfUrl, salesInvoice} = await generateSalesInvoiceForSalesOrder(
+        currentLinkedSalesOrderName,
+      );
+      const invoiceName = salesInvoice.name ?? 'Sales Invoice';
+      const message = [
+        `Hello ${stripeCustomerName ?? 'Customer'},`,
+        `Your sales invoice ${invoiceName} is ready.`,
+        pdfUrl,
+      ].join('\n');
+      const whatsappUrl = `whatsapp://send?phone=${whatsappPhoneNumber}&text=${encodeURIComponent(message)}`;
+      const canOpenWhatsApp = await Linking.canOpenURL(whatsappUrl);
+
+      if (!canOpenWhatsApp) {
+        throw new Error('WhatsApp is not available on this device to send the invoice PDF link.');
+      }
+
+      await Linking.openURL(whatsappUrl);
+
+      Alert.alert(
+        'Sales invoice ready',
+        `Sales invoice ${invoiceName} was generated and prepared for ${profile.mobile}.`,
+      );
+    } catch (error) {
+      logger.log('[Sales Invoice] generate/send error', error);
+      console.error('[Sales Invoice] generate/send error', error);
+      Alert.alert(
+        'Unable to generate invoice',
+        getSalesOrderSyncErrorMessage(error),
+      );
+    } finally {
+      setIsPaymentProcessing(false);
+    }
   };
 
   return (
@@ -683,6 +831,26 @@ export default function CartScreen() {
               styles.checkoutActionRow,
               requiresLoginToProceed && styles.checkoutLoginActionWrap,
             ]}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              disabled={isPaymentProcessing}
+              onPress={requiresLoginToProceed ? completeProfile : onGenerateSalesInvoice}
+              style={[
+                styles.invoiceButton,
+                requiresLoginToProceed && styles.invoiceButtonDisabledState,
+                isPaymentProcessing && styles.checkoutBuyButtonDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.invoiceButtonText,
+                  requiresLoginToProceed && styles.checkoutLoginButtonText,
+                ]}>
+                {requiresLoginToProceed
+                  ? 'Login for invoice'
+                  : 'Generate Sales Invoice'}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               activeOpacity={0.9}
               disabled={isPaymentProcessing}
@@ -1063,9 +1231,29 @@ const styles = StyleSheet.create({
   },
   checkoutActionRow: {
     flexDirection: 'row',
+    gap: 10,
   },
   checkoutLoginActionWrap: {
     backgroundColor: '#ffffff',
+  },
+  invoiceButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#0a5a44',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    minHeight: 54,
+    paddingHorizontal: 16,
+  },
+  invoiceButtonDisabledState: {
+    backgroundColor: '#0a5a44',
+  },
+  invoiceButtonText: {
+    color: '#0a5a44',
+    fontSize: 14,
+    fontWeight: '900',
+    textAlign: 'center',
   },
   checkoutBuyButton: {
     alignItems: 'center',

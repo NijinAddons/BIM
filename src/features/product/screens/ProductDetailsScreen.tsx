@@ -15,7 +15,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import {RootStackParamList} from '../../../app/navigation/types/root-navigation.types';
-import {ScreenHeader} from '../../../components/ui';
+import {ScreenHeader} from '../../../components';
 import {addProductToCart} from '../../cart/service';
 import {
   addWishlistItem,
@@ -118,7 +118,7 @@ export default function ProductDetailsScreen() {
             {
               icon: 'magnify',
               label: 'Search products',
-              onPress: () => navigation.navigate('MainTabs', {screen: 'Search'}),
+              onPress: () => navigation.navigate('Search'),
             },
             {
               icon: 'share-variant-outline',
@@ -132,7 +132,7 @@ export default function ProductDetailsScreen() {
               onPress: onToggleWishlist,
             },
           ]}
-          title="Product Details"
+          title={product.name}
           onBackPress={() => navigation.goBack()}
         />
       </View>
@@ -142,11 +142,8 @@ export default function ProductDetailsScreen() {
           {paddingBottom: insets.bottom + 120},
         ]}
         showsVerticalScrollIndicator={false}>
-        <View style={[styles.imageCard, {backgroundColor: product.tone}]}>
+        <View style={styles.imageCard}>
           <Image source={{uri: product.image}} style={styles.productImage} />
-          <View style={styles.offerBadge}>
-            <Text style={styles.offerText}>{product.offerTag}</Text>
-          </View>
         </View>
 
         <View style={styles.detailsCard}>
@@ -218,7 +215,7 @@ export default function ProductDetailsScreen() {
                   key={item.id}
                   onPress={() => navigation.push('ProductDetails', {product: item})}
                   style={styles.similarProductCard}>
-                  <View style={[styles.similarImageWrap, {backgroundColor: item.tone}]}>
+                  <View style={styles.similarImageWrap}>
                     <Image source={{uri: item.image}} style={styles.similarImage} />
                   </View>
                   <Text numberOfLines={2} style={styles.similarName}>
@@ -274,31 +271,15 @@ const styles = StyleSheet.create({
   },
   imageCard: {
     alignItems: 'center',
-    borderRadius: 28,
     marginBottom: 16,
-    overflow: 'hidden',
-    paddingHorizontal: 20,
-    paddingVertical: 22,
+    minHeight: 320,
+    justifyContent: 'center',
     position: 'relative',
   },
   productImage: {
-    height: 260,
+    height: 320,
     resizeMode: 'contain',
     width: '100%',
-  },
-  offerBadge: {
-    backgroundColor: '#ef4444',
-    borderRadius: 999,
-    left: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    position: 'absolute',
-    top: 14,
-  },
-  offerText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: '800',
   },
   detailsCard: {
     backgroundColor: '#ffffff',
@@ -450,7 +431,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     height: 98,
     marginBottom: 10,
-    overflow: 'hidden',
     width: '100%',
   },
   similarImage: {

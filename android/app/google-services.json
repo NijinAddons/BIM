@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:586858899535:android:f749f7843164534dc3223a",
+        "mobilesdk_app_id": "1:586858899535:android:f4b2f9dd51742edcc3223a",
         "android_client_info": {
-          "package_name": "com.buyinminutes"
+          "package_name": "com.addons.buyinminutes"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "586858899535-gsvn1k48u4j0d03bjvtemf0107csn5fm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAFXIydQEo7_y1PsRy_LRhTUW1MVZFiELo"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "586858899535-gsvn1k48u4j0d03bjvtemf0107csn5fm.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "586858899535-nc37gh2bmb63u92mk38us2dbrfblfhfk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.addons.buyinminutes"
+              }
+            }
+          ]
         }
       }
     }

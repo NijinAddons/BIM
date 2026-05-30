@@ -247,7 +247,7 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
   const [isSuggestionsVisible, setIsSuggestionsVisible] = React.useState(false);
   const [isSearchingLocation, setIsSearchingLocation] = React.useState(false);
   const [isAddressDetailsVisible, setIsAddressDetailsVisible] = React.useState(
-    Boolean(route.params.savedAddressId),
+    false,
   );
   const [isUpdatingDraggedLocation, setIsUpdatingDraggedLocation] =
     React.useState(false);
@@ -309,12 +309,14 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
     if (trimmedQuery.length < 3) {
       setSuggestions([]);
       setIsLoadingSuggestions(false);
+      setIsSuggestionsVisible(false);
       return;
     }
 
     let isActive = true;
     const timeout = setTimeout(async () => {
       setIsLoadingSuggestions(true);
+      setIsSuggestionsVisible(true);
 
       try {
         const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
@@ -359,10 +361,12 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
 
         if (isActive) {
           setSuggestions(nextSuggestions);
+          setIsSuggestionsVisible(true);
         }
       } catch {
         if (isActive) {
           setSuggestions([]);
+          setIsSuggestionsVisible(false);
         }
       } finally {
         if (isActive) {
@@ -842,9 +846,9 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
             autoCorrect={false}
             onChangeText={text => {
               setSearchQuery(text);
-              setIsSuggestionsVisible(true);
+              setIsSuggestionsVisible(text.trim().length >= 3);
             }}
-            onFocus={() => setIsSuggestionsVisible(true)}
+            onFocus={() => setIsSuggestionsVisible(searchQuery.trim().length >= 3)}
             onSubmitEditing={searchLocation}
             placeholder="Search for area, street or building"
             placeholderTextColor={colors.mutedText}
@@ -858,9 +862,17 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
             <Pressable
               disabled={!searchQuery.trim()}
               hitSlop={10}
-              onPress={searchLocation}
+              onPress={() => {
+                setSearchQuery('');
+                setSuggestions([]);
+                setIsSuggestionsVisible(false);
+              }}
               style={!searchQuery.trim() && styles.searchButtonDisabled}>
-              <Text style={styles.searchButtonText}>Search</Text>
+              <MaterialCommunityIcons
+                color={searchQuery.trim() ? colors.text : colors.mutedText}
+                name="close"
+                size={18}
+              />
             </Pressable>
           )}
         </View>
@@ -881,6 +893,21 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
                 </Text>
               </Pressable>
             ))}
+          </View>
+        ) : null}
+        {isSuggestionsVisible &&
+        !isLoadingSuggestions &&
+        searchQuery.trim().length >= 3 &&
+        suggestions.length === 0 ? (
+          <View style={styles.suggestionsDropdown}>
+            <View style={styles.emptySuggestionState}>
+              <MaterialCommunityIcons
+                color={colors.mutedText}
+                name="map-search-outline"
+                size={18}
+              />
+              <Text style={styles.emptySuggestionText}>No matching addresses found.</Text>
+            </View>
           </View>
         ) : null}
       </View>
@@ -1092,7 +1119,9 @@ export default function ConfirmLocationScreen({navigation, route}: Props) {
                   styles.confirmButton,
                   (!address.trim() || isLoadingLocation) && styles.confirmButtonDisabled,
                 ]}>
-                <Text style={styles.confirmButtonText}>Add address Details</Text>
+                <Text style={styles.confirmButtonText}>
+                  {route.params.savedAddressId ? 'Edit address details' : 'Add address details'}
+                </Text>
               </Pressable>
             </View>
           )}
@@ -1236,6 +1265,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
+  emptySuggestionState: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+  },
+  emptySuggestionText: {
+    color: colors.mutedText,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
   searchInput: {
     color: colors.text,
     flex: 1,
@@ -1246,11 +1288,6 @@ const styles = StyleSheet.create({
   },
   searchButtonDisabled: {
     opacity: 0.45,
-  },
-  searchButtonText: {
-    color: '#1f9d55',
-    fontSize: 13,
-    fontWeight: '900',
   },
   mapArea: {
     backgroundColor: '#f5fbf7',
@@ -1332,7 +1369,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   bottomSheetExpanded: {
-    maxHeight: '68%',
+    maxHeight: '52%',
   },
   bottomSheetContent: {
     gap: 18,

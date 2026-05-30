@@ -1,8 +1,7 @@
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Image,
   Pressable,
   ScrollView,
   StatusBar,
@@ -14,16 +13,20 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { RootStackParamList } from '../../../app/navigation/types/root-navigation.types';
+import {
+  RootStackParamList,
+} from '../../../app/navigation/types/root-navigation.types';
+import ProductCard from '../../../components/ProductCard';
+import ScreenHeader from '../../../components/ScreenHeader';
 import { colors } from '../../../theme/colors';
-import { addProductToCart } from '../../cart/service';
 import { fetchProducts } from '../../product/service';
-import { Product } from '../../product/types';
+import { Product } from '../../product/service';
 
 type SearchScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
-  'ProductDetails'
+  'Search'
 >;
+type SearchScreenRouteProp = RouteProp<RootStackParamList, 'Search'>;
 
 const quickSearches = ['Milk', 'Bread', 'Eggs', 'Rice', 'Snacks'];
 const recentSearches = ['Banana', 'Full Cream Milk', 'Brown Bread'];
@@ -31,6 +34,7 @@ const recentSearches = ['Banana', 'Full Cream Milk', 'Brown Bread'];
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<SearchScreenNavigationProp>();
+  const route = useRoute<SearchScreenRouteProp>();
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
 
@@ -55,6 +59,12 @@ export default function SearchScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (route.params?.query !== undefined) {
+      setQuery(route.params.query);
+    }
+  }, [route.params?.query, route.params?.submittedAt]);
+
   const filteredProducts = useMemo(() => {
     if (!hasQuery) {
       return [];
@@ -78,39 +88,50 @@ export default function SearchScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: insets.top + 18, paddingBottom: insets.bottom + 28 },
+          { paddingBottom: insets.bottom + 28 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Search</Text>
-          <Text style={styles.subtitle}>Find products in seconds</Text>
+        <View style={[styles.headerBlock, { paddingTop: insets.top + 18 }]}>
+          <View style={styles.header}>
+            <ScreenHeader
+              onBackPress={() => navigation.goBack()}
+              title="Search"
+              titleStyle={styles.headerTitle}
+            />
+            <View style={styles.headerCopy}>
+              <Text style={styles.subtitle}>Find products in seconds</Text>
+            </View>
+          </View>
         </View>
 
-        <View style={styles.searchBar}>
-          <MaterialCommunityIcons color="#68625a" name="magnify" size={22} />
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            onChangeText={setQuery}
-            placeholder="Search for groceries"
-            placeholderTextColor="#8a8376"
-            returnKeyType="search"
-            style={styles.searchInput}
-            value={query}
-          />
-          {query.length > 0 ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => setQuery('')}
-              style={styles.clearButton}
-            >
-              <MaterialCommunityIcons color="#68625a" name="close" size={16} />
-            </Pressable>
-          ) : null}
+        <View style={styles.searchSection}>
+          <View style={styles.searchBar}>
+            <MaterialCommunityIcons color="#68625a" name="magnify" size={22} />
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={setQuery}
+              placeholder="Search for groceries"
+              placeholderTextColor="#8a8376"
+              returnKeyType="search"
+              style={styles.searchInput}
+              value={query}
+            />
+            {query.length > 0 ? (
+              <Pressable
+                hitSlop={8}
+                onPress={() => setQuery('')}
+                style={styles.clearButton}
+              >
+                <MaterialCommunityIcons color="#68625a" name="close" size={16} />
+              </Pressable>
+            ) : null}
+          </View>
         </View>
 
+        <View style={styles.body}>
         <View style={styles.quickRow}>
           {quickSearches.map(item => (
             <Pressable
@@ -160,44 +181,9 @@ export default function SearchScreen() {
             {filteredProducts.length > 0 ? (
               <View style={styles.resultList}>
                 {filteredProducts.map(item => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() =>
-                      navigation.navigate('ProductDetails', { product: item })
-                    }
-                    style={styles.resultRow}
-                  >
-                    <View
-                      style={[
-                        styles.resultImageWrap,
-                        { backgroundColor: item.tone },
-                      ]}
-                    >
-                      <Image
-                        source={{ uri: item.image }}
-                        style={styles.resultImage}
-                      />
-                    </View>
-                    <View style={styles.resultCopy}>
-                      <Text numberOfLines={1} style={styles.resultName}>
-                        {item.name}
-                      </Text>
-                      <Text numberOfLines={1} style={styles.resultMeta}>
-                        {item.grams} • {item.eta}
-                      </Text>
-                      <Text style={styles.resultPrice}>AED {item.price}</Text>
-                    </View>
-                    <Pressable
-                      hitSlop={8}
-                      onPress={event => {
-                        event.stopPropagation();
-                        addProductToCart(item);
-                      }}
-                      style={styles.addButton}
-                    >
-                      <Text style={styles.addButtonText}>Add</Text>
-                    </Pressable>
-                  </Pressable>
+                  <View key={item.id} style={styles.resultCardWrap}>
+                    <ProductCard item={item} />
+                  </View>
                 ))}
               </View>
             ) : (
@@ -213,6 +199,7 @@ export default function SearchScreen() {
             )}
           </View>
         ) : null}
+        </View>
       </ScrollView>
     </View>
   );
@@ -224,25 +211,40 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    paddingBottom: 0,
+  },
+  headerBlock: {
+    backgroundColor: '#f7e7a6',
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+  },
+  searchSection: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+  },
+  body: {
     paddingHorizontal: 16,
   },
   header: {
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  title: {
-    color: colors.text,
-    fontSize: 28,
-    fontWeight: '800',
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  headerCopy: {
+    marginTop: -4,
+    paddingLeft: 48,
   },
   subtitle: {
     color: colors.mutedText,
     fontSize: 14,
-    marginTop: 4,
+    lineHeight: 20,
   },
   searchBar: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: '#fff8e6',
+    borderColor: '#e7d6a8',
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -324,64 +326,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   resultList: {
-    gap: 10,
-  },
-  resultRow: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 14,
-    borderWidth: 1,
     flexDirection: 'row',
-    minHeight: 86,
-    padding: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
-  resultImageWrap: {
-    alignItems: 'center',
-    borderRadius: 12,
-    height: 62,
-    justifyContent: 'center',
-    marginRight: 12,
-    overflow: 'hidden',
-    width: 62,
-  },
-  resultImage: {
-    height: '100%',
-    resizeMode: 'contain',
-    width: '100%',
-  },
-  resultCopy: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  resultName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  resultMeta: {
-    color: colors.mutedText,
-    fontSize: 12,
-    marginTop: 4,
-  },
-  resultPrice: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '800',
-    marginTop: 6,
-  },
-  addButton: {
-    alignItems: 'center',
-    backgroundColor: colors.tagGreen,
-    borderRadius: 9,
-    minWidth: 52,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '800',
+  resultCardWrap: {
+    marginBottom: 12,
+    width: '48%',
   },
   emptyState: {
     alignItems: 'center',

@@ -141,9 +141,6 @@ export default function AddressSelectionScreen() {
             onPress={useCurrentLocation}
             style={styles.actionRow}>
             <View style={styles.actionRowLeft}>
-              <View style={[styles.iconWrap, styles.currentLocationIconWrap]}>
-                <MaterialCommunityIcons color="#ffffff" name="crosshairs-gps" size={18} />
-              </View>
               <View style={styles.addressTextWrap}>
                 <Text style={styles.addressTitle}>Use my current location</Text>
                 <Text style={styles.addressValue}>

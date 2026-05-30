@@ -6,6 +6,8 @@ export {
   removeWishlistItem,
   subscribeWishlist,
 } from './data/wishlist';
+export type {Category, Product} from './data/mockData';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {appConfig} from '../../app/config/appConfig';
 import {frappeService} from '../../services/frappe';
 import {logger} from '../../utils/logger';
@@ -151,13 +153,46 @@ const toProduct = (item: unknown, index: number): Product | null => {
 
 type FetchProductsOptions = {
   fallbackToMock?: boolean;
+  forceRefresh?: boolean;
 };
 
-export const fetchProducts = async (
-  options: FetchProductsOptions = {},
-): Promise<Product[]> => {
-  const {fallbackToMock = false} = options;
+type StoredProductCache = {
+  products: Product[];
+  updatedAt: string;
+};
 
+const PRODUCT_CACHE_STORAGE_KEY = '@buy_in_minutes_products';
+let cachedProducts: Product[] = [];
+let hasLoadedStoredProductCache = false;
+let productFetchPromise: Promise<Product[]> | null = null;
+
+const isProduct = (value: unknown): value is Product => {
+  const record = asRecord(value);
+
+  return Boolean(
+    record &&
+      typeof record.id === 'string' &&
+      typeof record.name === 'string' &&
+      typeof record.image === 'string' &&
+      typeof record.price === 'string' &&
+      typeof record.grams === 'string' &&
+      typeof record.eta === 'string' &&
+      typeof record.tone === 'string' &&
+      typeof record.offerTag === 'string' &&
+      typeof record.totalSellers === 'number',
+  );
+};
+
+const persistProductCache = async (productsToStore: Product[]) => {
+  const payload: StoredProductCache = {
+    products: productsToStore,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await AsyncStorage.setItem(PRODUCT_CACHE_STORAGE_KEY, JSON.stringify(payload));
+};
+
+const fetchProductsFromSource = async (fallbackToMock: boolean) => {
   try {
     const webshopItems = await frappeService.fetchAllProducts();
     logger.log('[All Products] raw response', {
@@ -179,9 +214,16 @@ export const fetchProducts = async (
           ? 'Product feed returned no usable products, falling back to mock data.'
           : 'Product feed returned no usable products.',
       );
+      if (cachedProducts.length > 0) {
+        return cachedProducts;
+      }
+
       return fallbackToMock ? mockProducts : [];
     }
 
+    cachedProducts = parsedProducts;
+    hasLoadedStoredProductCache = true;
+    await persistProductCache(parsedProducts);
     return parsedProducts;
   } catch (error) {
     logger.warn(
@@ -190,6 +232,77 @@ export const fetchProducts = async (
         : 'Unable to fetch product feed.',
       error,
     );
+
+    if (cachedProducts.length > 0) {
+      return cachedProducts;
+    }
+
     return fallbackToMock ? mockProducts : [];
   }
+};
+
+export const getCachedProducts = () => cachedProducts;
+
+export const loadStoredProductCache = async () => {
+  if (hasLoadedStoredProductCache) {
+    return cachedProducts;
+  }
+
+  try {
+    const rawValue = await AsyncStorage.getItem(PRODUCT_CACHE_STORAGE_KEY);
+
+    if (!rawValue) {
+      hasLoadedStoredProductCache = true;
+      return cachedProducts;
+    }
+
+    const parsedValue = JSON.parse(rawValue) as StoredProductCache;
+    const storedProducts = Array.isArray(parsedValue?.products)
+      ? parsedValue.products.filter(isProduct)
+      : [];
+
+    cachedProducts = storedProducts;
+  } catch (error) {
+    logger.warn('Unable to load cached products.', error);
+    cachedProducts = [];
+  }
+
+  hasLoadedStoredProductCache = true;
+  return cachedProducts;
+};
+
+export const prefetchProducts = async () => {
+  await loadStoredProductCache();
+
+  if (cachedProducts.length > 0 || productFetchPromise) {
+    return productFetchPromise ?? cachedProducts;
+  }
+
+  productFetchPromise = fetchProductsFromSource(false).finally(() => {
+    productFetchPromise = null;
+  });
+
+  return productFetchPromise;
+};
+
+export const fetchProducts = async (
+  options: FetchProductsOptions = {},
+): Promise<Product[]> => {
+  const {fallbackToMock = false, forceRefresh = false} = options;
+
+  await loadStoredProductCache();
+
+  if (!forceRefresh && cachedProducts.length > 0) {
+    return cachedProducts;
+  }
+
+  if (productFetchPromise) {
+    return productFetchPromise;
+  }
+
+  productFetchPromise = fetchProductsFromSource(fallbackToMock).finally(() => {
+    productFetchPromise = null;
+  });
+
+  return productFetchPromise;
 };

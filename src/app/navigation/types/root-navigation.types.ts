@@ -1,6 +1,6 @@
 import {NavigatorScreenParams} from '@react-navigation/native';
 
-import {Product} from '../../../features/product/types';
+import {Product} from '../../../features/product/service';
 import {SavedAddressDetails} from '../../../features/profile/service';
 
 export type RootStackParamList = {
@@ -9,12 +9,28 @@ export type RootStackParamList = {
   Otp: {
     authFlow: 'login' | 'signup';
     callingCode: string;
+    customer?: string;
+    email?: string;
+    expiresIn?: number;
+    maxAttempts?: number;
     mobile: string;
+    name?: string;
     phone: string;
+  };
+  PhoneEntry: {
+    customer?: string;
+    email: string;
+    name: string;
   };
   ProfileDetails: {mobile: string; phone: string};
   MainTabs: NavigatorScreenParams<BottomTabParamList> | undefined;
   ProductDetails: {product: Product};
+  Search:
+    | {
+        query?: string;
+        submittedAt?: number;
+      }
+    | undefined;
   CategoryDetails: {categoryTitle: string; sectionTitle: string};
   AddressSelection: undefined;
   ConfirmLocation: {
@@ -27,12 +43,13 @@ export type RootStackParamList = {
   };
   EditProfile: undefined;
   MyAddresses: undefined;
+  Orders: undefined;
   Wishlist: undefined;
 };
 
 export type BottomTabParamList = {
   Home: undefined;
-  Search: undefined;
+  Categories: undefined;
   Cart: undefined;
   Profile: undefined;
 };

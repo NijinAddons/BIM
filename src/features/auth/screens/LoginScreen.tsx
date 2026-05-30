@@ -1,21 +1,16 @@
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import auth from '@react-native-firebase/auth';
 import {
-  GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   Alert,
-  ActivityIndicator,
   Animated,
   Easing,
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -24,20 +19,34 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import CountryPicker, {
-  Country,
-  CountryCode,
-  Flag,
-} from 'react-native-country-picker-modal';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import {appConfig} from '../../../app/config/appConfig';
 import {RootStackParamList} from '../../../app/navigation/types/root-navigation.types';
-import {ApiError} from '../../../services/api/apiError';
+import {ActionButton} from '../../../components';
+import {
+  setStoredFrappeAuthCredentials,
+} from '../../../services/frappe/frappeAuth';
 import {appicon} from '../../../assets/images';
+import {logger} from '../../../utils/logger';
 import {setUserProfile} from '../../profile/service';
-import {otpService} from '../service';
+import {
+  appleAuthService,
+  AppleAuthResponse,
+  getLoginAuthCredentials,
+  getNestedAuthResponsePayload,
+  GoogleAuthResponse,
+  googleAuthService,
+  otpService,
+} from '../service';
+import {
+  findExistingAuthUserByEmail,
+  getLoginUserProfile,
+  getOtpDeliveryMeta,
+  isExistingUserLoginResponse,
+  isUserMissingError,
+  normalizeSocialAuthProfile,
+} from '../utils';
 
 type LoginNavProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
@@ -69,160 +78,65 @@ const heroRows = [
 const HERO_CARD_WIDTH = 92;
 const HERO_CARD_GAP = 12;
 const HERO_LOOP_DISTANCE = (HERO_CARD_WIDTH + HERO_CARD_GAP) * 4;
+const UAE_CALLING_CODE = '971';
+const UAE_LOCAL_NUMBER_LENGTH = 9;
 
-const serializeForLog = (value: unknown) =>
-  JSON.parse(
-    JSON.stringify(value, (_key, nestedValue) => {
-      if (typeof nestedValue === 'function') {
-        return `[function ${nestedValue.name || 'anonymous'}]`;
-      }
+const ANDROID_DEBUG_SHA1 = '5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25';
 
-      if (nestedValue instanceof Error) {
-        return {
-          message: nestedValue.message,
-          name: nestedValue.name,
-          stack: nestedValue.stack,
-        };
-      }
+const getGoogleLoginErrorMessage = (error: unknown) => {
+  if (isErrorWithCode(error)) {
+    if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+      return 'Google Play Services is not available on this device.';
+    }
 
-      return nestedValue;
-    }),
-  );
-
-const asRecord = (value: unknown): Record<string, unknown> | null => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-
-  return null;
-};
-
-const getString = (
-  record: Record<string, unknown> | null,
-  keys: string[],
-) => {
-  if (!record) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const value = record[key];
-
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
+    if (error.code === '10') {
+      return `Google Sign-In is not configured for this Android app signature. Add package com.addons.buyinminutes with SHA-1 ${ANDROID_DEBUG_SHA1} in Firebase, enable Google sign-in, then download a fresh android/app/google-services.json.`;
     }
   }
 
-  return undefined;
-};
+  if (error instanceof Error && error.message) {
+    if (error.message.includes('DEVELOPER_ERROR')) {
+      return `Google Sign-In is not configured for this Android app signature. Add package com.addons.buyinminutes with SHA-1 ${ANDROID_DEBUG_SHA1} in Firebase, enable Google sign-in, then download a fresh android/app/google-services.json.`;
+    }
 
-const getLoginPayload = (response: {data?: unknown; message?: unknown}) => {
-  return asRecord(response.data) ?? asRecord(response.message);
-};
-
-const getNestedLoginPayload = (response: {data?: unknown; message?: unknown}) => {
-  const payload = getLoginPayload(response);
-
-  return (
-    asRecord(payload?.data) ??
-    asRecord(payload?.message) ??
-    payload
-  );
-};
-
-const getLoginUserProfile = (response: {data?: unknown; message?: unknown}) => {
-  const payload = getNestedLoginPayload(response);
-  const user =
-    asRecord(payload?.user) ??
-    asRecord(payload?.data) ??
-    asRecord(payload?.message) ??
-    payload;
-
-  if (!user) {
-    return null;
+    return error.message;
   }
 
-  const name =
-    getString(user, ['full_name', 'fullName', 'username', 'name']) ?? '';
-  const email = getString(user, ['email', 'email_id']) ?? '';
-  const mobile = getString(user, ['phone', 'mobile', 'mobile_no']) ?? '';
+  return 'Unable to sign in with Google. Please try again.';
+};
 
-  if (!name && !email && !mobile) {
-    return null;
+type SocialAuthResponse = GoogleAuthResponse | AppleAuthResponse;
+
+const getSocialLoginFlags = (response?: {data?: unknown; message?: unknown}) => {
+  if (!response) {
+    return {
+      existingUser: false,
+      phoneRequired: false,
+    };
   }
+
+  const payload = getNestedAuthResponsePayload(response);
+  const existingUserFlag =
+    payload?.existing_user ?? payload?.existingUser ?? payload?.user_exists;
+  const phoneRequiredFlag =
+    payload?.phone_required ?? payload?.phoneRequired ?? payload?.mobile_required;
 
   return {
-    email,
-    mobile,
-    name,
+    existingUser:
+      typeof existingUserFlag === 'boolean'
+        ? existingUserFlag
+        : isExistingUserLoginResponse(response),
+    phoneRequired: phoneRequiredFlag === true,
   };
-};
-
-const isExistingUserLoginResponse = (response: {data?: unknown; message?: unknown}) => {
-  if (getLoginUserProfile(response)) {
-    return true;
-  }
-
-  const payload = getNestedLoginPayload(response);
-
-  if (!payload) {
-    return false;
-  }
-
-  const explicitExisting =
-    payload.user_exists ??
-    payload.userExists ??
-    payload.existing_user ??
-    payload.existingUser;
-
-  if (typeof explicitExisting === 'boolean') {
-    return explicitExisting;
-  }
-
-  const explicitNewUser = payload.is_new_user ?? payload.isNewUser;
-
-  if (typeof explicitNewUser === 'boolean') {
-    return !explicitNewUser;
-  }
-
-  const messageText = getString(payload, ['status', 'message', 'detail'])?.toLowerCase() ?? '';
-
-  return (
-    messageText.includes('login success') ||
-    messageText.includes('logged in') ||
-    messageText.includes('user exists')
-  );
-};
-
-const isUserMissingError = (error: unknown) => {
-  if (!(error instanceof ApiError)) {
-    return false;
-  }
-
-  if (error.status === 404) {
-    return true;
-  }
-
-  const body = error.body?.toLowerCase() ?? '';
-
-  return (
-    body.includes('not found') ||
-    body.includes('user does not exist') ||
-    body.includes('customer does not exist') ||
-    body.includes('new user') ||
-    body.includes('signup')
-  );
 };
 
 export default function LoginScreen({navigation}: Props) {
   const insets = useSafeAreaInsets();
-  const [countryCode, setCountryCode] = useState<CountryCode>('AE');
-  const [callingCode, setCallingCode] = useState('971');
-  const [countryPickerVisible, setCountryPickerVisible] = useState(false);
   const [mobile, setMobile] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
-  const isValid = useMemo(() => mobile.length >= 6 && mobile.length <= 15, [mobile]);
+  const isValid = mobile.length === UAE_LOCAL_NUMBER_LENGTH;
   const rowAnimations = useRef([
     new Animated.Value(0),
     new Animated.Value(-HERO_LOOP_DISTANCE),
@@ -254,21 +168,12 @@ export default function LoginScreen({navigation}: Props) {
   }, [rowAnimations]);
 
   useEffect(() => {
-    GoogleSignin.configure({
-      iosClientId: appConfig.firebaseGoogleIosClientId,
-      webClientId: appConfig.firebaseGoogleWebClientId || undefined,
-    });
+    googleAuthService.configure();
   }, []);
 
   const onChangeMobile = (value: string) => {
     const digits = value.replace(/\D/g, '');
-    setMobile(digits.slice(0, 15));
-  };
-
-  const onSelectCountry = (country: Country) => {
-    setCountryCode(country.cca2);
-    setCallingCode(country.callingCode[0] ?? '');
-    setCountryPickerVisible(false);
+    setMobile(digits.slice(0, UAE_LOCAL_NUMBER_LENGTH));
   };
 
   const onContinue = async () => {
@@ -277,7 +182,7 @@ export default function LoginScreen({navigation}: Props) {
       return;
     }
 
-    const phone = `+${callingCode}${mobile}`;
+    const phone = `+${UAE_CALLING_CODE}${mobile}`;
 
     try {
       setIsSendingOtp(true);
@@ -293,8 +198,16 @@ export default function LoginScreen({navigation}: Props) {
         }
       }
 
-      await otpService.sendOtp(phone);
-      navigation.navigate('Otp', {authFlow, callingCode, mobile, phone});
+      const otpResponse = await otpService.sendOtp(phone);
+      const otpDeliveryMeta = getOtpDeliveryMeta(otpResponse.data);
+      navigation.navigate('Otp', {
+        authFlow,
+        callingCode: UAE_CALLING_CODE,
+        expiresIn: otpDeliveryMeta.expiresIn,
+        maxAttempts: otpDeliveryMeta.maxAttempts,
+        mobile,
+        phone,
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error && error.message
@@ -307,9 +220,11 @@ export default function LoginScreen({navigation}: Props) {
   };
 
   const skipLogin = async () => {
+    await setStoredFrappeAuthCredentials({apiKey: '', apiSecret: ''});
     await setUserProfile(
       {
         address: '',
+        customer: '',
         email: '',
         mobile: '',
         name: 'BIM User',
@@ -319,8 +234,114 @@ export default function LoginScreen({navigation}: Props) {
     navigation.replace('MainTabs');
   };
 
+  const persistResolvedProfile = async (
+    resolvedProfile: ReturnType<typeof normalizeSocialAuthProfile>,
+  ) => {
+    const existingUser = await findExistingAuthUserByEmail(resolvedProfile.email);
+
+    if (existingUser?.email) {
+      return {
+        customer: resolvedProfile.customer,
+        email: existingUser.email.trim(),
+        mobile:
+          typeof existingUser.mobile_no === 'string'
+            ? existingUser.mobile_no.trim()
+            : '',
+        name:
+          typeof existingUser.full_name === 'string' && existingUser.full_name.trim()
+            ? existingUser.full_name.trim()
+            : resolvedProfile.name,
+      };
+    }
+
+    return {
+      customer: resolvedProfile.customer,
+      email: resolvedProfile.email,
+      mobile: resolvedProfile.mobile,
+      name: resolvedProfile.name,
+    };
+  };
+
+  const completeSocialLogin = async (
+    authResult: SocialAuthResponse,
+    logPrefix: '[Google Login]' | '[Apple Login]',
+  ) => {
+    const {backendResponse, profile} = authResult;
+
+    logger.log(`${logPrefix} backend response`, backendResponse);
+    logger.log(`${logPrefix} social profile`, profile);
+
+    const resolvedProfile = normalizeSocialAuthProfile(
+      backendResponse ? getLoginUserProfile(backendResponse) ?? profile : profile,
+    );
+    const authCredentials = backendResponse
+      ? getLoginAuthCredentials(backendResponse)
+      : null;
+
+    logger.log(`${logPrefix} resolved profile`, {
+      authCredentials,
+      resolvedProfile,
+    });
+
+    if (authCredentials) {
+      await setStoredFrappeAuthCredentials(authCredentials);
+    }
+
+    if (!resolvedProfile.email || !resolvedProfile.name) {
+      throw new Error(
+        `${logPrefix === '[Google Login]' ? 'Google' : 'Apple'} login did not return a valid name and email.`,
+      );
+    }
+
+    const resolvedExistingProfile = await persistResolvedProfile(resolvedProfile);
+    const {existingUser, phoneRequired} = getSocialLoginFlags(backendResponse);
+
+    await setUserProfile(
+      {
+        address: '',
+        customer: resolvedExistingProfile.customer,
+        email: resolvedExistingProfile.email,
+        mobile: resolvedExistingProfile.mobile,
+        name: resolvedExistingProfile.name,
+      },
+      {
+        profileCompleted: Boolean(
+          resolvedExistingProfile.name.trim() && resolvedExistingProfile.email.trim(),
+        ),
+      },
+    );
+
+    const mobileDigits = resolvedExistingProfile.mobile.trim();
+
+    if (existingUser && !phoneRequired) {
+      navigation.replace('Otp', {
+        authFlow: 'login',
+        callingCode: UAE_CALLING_CODE,
+        customer: resolvedExistingProfile.customer,
+        email: resolvedExistingProfile.email,
+        mobile: mobileDigits.replace(/^\+?971/, ''),
+        name: resolvedExistingProfile.name,
+        phone: mobileDigits,
+      });
+      return;
+    }
+
+    navigation.replace('PhoneEntry', {
+      customer: resolvedExistingProfile.customer,
+      email: resolvedExistingProfile.email,
+      name: resolvedExistingProfile.name,
+    });
+
+    logger.log(`${logPrefix} existing user lookup`, {
+      email: resolvedProfile.email,
+      existingUser,
+      phoneRequired,
+      resolvedExistingProfile,
+    });
+  };
+
   const onGoogleLogin = async () => {
-    if (!appConfig.firebaseGoogleWebClientId.trim()) {
+    if (!googleAuthService.isConfigured()) {
       Alert.alert(
         'Google login not ready',
         'Add the Firebase Web Client ID in appConfig and re-download google-services.json after enabling Google sign-in and SHA-1 in Firebase.',
@@ -330,63 +351,73 @@ export default function LoginScreen({navigation}: Props) {
 
     try {
       setIsGoogleSigningIn(true);
-      await GoogleSignin.hasPlayServices();
-      const signInResult = await GoogleSignin.signIn();
-      console.log(
-        '[Google Login] Google sign-in full response',
-        serializeForLog(signInResult),
-      );
-      const idToken = signInResult.data?.idToken;
-
-      if (!idToken) {
-        throw new Error('Google sign-in did not return an ID token.');
-      }
-
-      console.log('[Google Login] Google idToken', idToken);
-
-      const credential = auth.GoogleAuthProvider.credential(idToken);
-      const userCredential = await auth().signInWithCredential(credential);
-      console.log(
-        '[Google Login] Firebase auth full response',
-        serializeForLog({
-          additionalUserInfo: userCredential.additionalUserInfo,
-          user: userCredential.user,
-        }),
-      );
-      const user = userCredential.user;
-
-      await setUserProfile(
-        {
-          address: '',
-          email: user.email ?? '',
-          mobile: user.phoneNumber ?? '',
-          name: user.displayName ?? 'BIM User',
-        },
-        {
-          profileCompleted: Boolean(
-            (user.displayName ?? '').trim() && (user.email ?? '').trim(),
-          ),
-        },
-      );
-
-      navigation.replace('MainTabs');
+      const authResult = await googleAuthService.signIn();
+      logger.log('[Google Login] auth response', authResult);
+      logger.log('[Google Login] signIn result', {
+        backendResponse: authResult.backendResponse,
+        idToken: authResult.idToken,
+        profile: authResult.profile,
+      });
+      await completeSocialLogin(authResult, '[Google Login]');
     } catch (error) {
-      console.log(
-        '[Google Login] error full response',
-        serializeForLog(error),
-      );
       if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_CANCELLED) {
+        Alert.alert(
+          'Google login cancelled',
+          'Google sign-in was cancelled. Please choose an account to continue.',
+        );
         return;
       }
 
-      const errorMessage =
-        error instanceof Error && error.message
-          ? error.message
-          : 'Unable to sign in with Google. Please try again.';
-
-      Alert.alert('Google login failed', errorMessage);
+      Alert.alert('Google login failed', getGoogleLoginErrorMessage(error));
     } finally {
       setIsGoogleSigningIn(false);
+    }
+  };
+
+  const onAppleLogin = async () => {
+    logger.log('[Apple Login] button clicked', {
+      isConfigured: appleAuthService.isConfigured(),
+      platform: Platform.OS,
+    });
+
+    if (!appleAuthService.isConfigured()) {
+      Alert.alert(
+        'Apple login not ready',
+        'Apple sign-in is not available on this iOS build yet.',
+      );
+      return;
+    }
+
+    try {
+      setIsAppleSigningIn(true);
+      logger.log('[Apple Login] invoking service signIn');
+      const authResult = await appleAuthService.signIn();
+      logger.log('[Apple Login] auth response', authResult);
+      logger.log('[Apple Login] signIn result', {
+        backendResponse: authResult.backendResponse,
+        idToken: authResult.idToken,
+        profile: authResult.profile,
+      });
+      await completeSocialLogin(authResult, '[Apple Login]');
+    } catch (error) {
+      logger.log('[Apple Login] screen error', error);
+      if (error instanceof Error && error.message === 'Apple sign-in was cancelled.') {
+        Alert.alert(
+          'Apple login cancelled',
+          'Apple sign-in was cancelled. Please choose an account to continue.',
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Apple login failed',
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to sign in with Apple. Please try again.',
+      );
+    } finally {
+      setIsAppleSigningIn(false);
+      logger.log('[Apple Login] loading state cleared');
     }
   };
 
@@ -506,45 +537,31 @@ export default function LoginScreen({navigation}: Props) {
             <View style={styles.formSection}>
               <Text style={styles.inputLabel}>Mobile Number</Text>
               <View style={styles.inputRow}>
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setCountryPickerVisible(true)}
-                  style={styles.countryPickerButton}>
-                  <Flag
-                    countryCode={countryCode}
-                    flagSize={20}
-                    withEmoji
-                  />
-                  <Text style={styles.countryCode}>+{callingCode}</Text>
-                  <Text style={styles.countryPickerChevron}>▾</Text>
-                </TouchableOpacity>
+                <Text style={styles.countryCode}>+{UAE_CALLING_CODE}</Text>
                 <View style={styles.inputDivider} />
                 <TextInput
                   keyboardType="number-pad"
-                  maxLength={15}
+                  maxLength={UAE_LOCAL_NUMBER_LENGTH}
                   onChangeText={onChangeMobile}
-                  placeholder="Enter mobile number"
+                  placeholder="50XXXXXXX"
                   placeholderTextColor="#8f8f8f"
                   style={styles.input}
                   value={mobile}
                 />
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.9}
-                disabled={!isValid || isSendingOtp}
+              <ActionButton
+                active={isValid}
+                disabled={!isValid}
+                label={isSendingOtp ? 'Sending OTP...' : 'Continue'}
+                loading={isSendingOtp}
                 onPress={onContinue}
                 style={[
                   styles.continueButton,
-                  isValid && !isSendingOtp && styles.continueButtonActive,
-                ]}>
-                <View style={styles.continueButtonContent}>
-                  {isSendingOtp ? <ActivityIndicator color="#ffffff" size="small" /> : null}
-                  <Text style={styles.continueText}>
-                    {isSendingOtp ? 'Sending OTP...' : 'Continue'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+                  isValid && !isSendingOtp ? styles.continueButtonActive : null,
+                ]}
+                textStyle={styles.continueText}
+              />
 
               <View style={styles.optionalDividerRow}>
                 <View style={styles.optionalDividerLine} />
@@ -552,27 +569,46 @@ export default function LoginScreen({navigation}: Props) {
                 <View style={styles.optionalDividerLine} />
               </View>
 
-              <TouchableOpacity
-                activeOpacity={0.9}
-                disabled={isGoogleSigningIn}
-                onPress={onGoogleLogin}
-                style={[styles.googleButton, isGoogleSigningIn && styles.googleButtonDisabled]}>
-                <View style={styles.googleButtonContent}>
-                  <View style={styles.googleMark}>
-                    <MaterialCommunityIcons
-                      color="#4285F4"
-                      name="google"
-                      size={16}
-                    />
-                  </View>
-                  {isGoogleSigningIn ? (
-                    <ActivityIndicator color="#163322" size="small" />
-                  ) : null}
-                  <Text style={styles.googleButtonText}>
-                    {isGoogleSigningIn ? 'Signing in...' : 'Continue with Google'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
+              <View style={styles.socialButtonsRow}>
+                <ActionButton
+                  accessory={(
+                    <View style={styles.socialIconBadge}>
+                      <MaterialCommunityIcons
+                        color="#4285F4"
+                        name="google"
+                        size={16}
+                      />
+                    </View>
+                  )}
+                  label={isGoogleSigningIn ? 'Signing in...' : 'Google'}
+                  loading={isGoogleSigningIn}
+                  loadingColor="#163322"
+                  onPress={onGoogleLogin}
+                  style={[styles.socialButton, styles.socialButtonRowItem]}
+                  textStyle={styles.googleButtonText}
+                  variant="secondary"
+                />
+
+                {Platform.OS === 'ios' ? (
+                  <ActionButton
+                    accessory={(
+                      <View style={[styles.socialIconBadge, styles.appleIconBadge]}>
+                        <MaterialCommunityIcons
+                          color="#ffffff"
+                          name="apple"
+                          size={18}
+                        />
+                      </View>
+                    )}
+                    label="Apple"
+                    loading={isAppleSigningIn}
+                    onPress={onAppleLogin}
+                    style={[styles.socialButton, styles.socialButtonRowItem, styles.appleButton]}
+                    textStyle={[styles.googleButtonText, styles.appleButtonText]}
+                    variant="dark"
+                  />
+                ) : null}
+              </View>
 
               <Text style={styles.termsText}>
                 By continuing, you agree to our Terms of service &amp; Privacy policy
@@ -580,33 +616,11 @@ export default function LoginScreen({navigation}: Props) {
             </View>
           </View>
         </ScrollView>
-          <TouchableOpacity
-            onPress={skipLogin}
-            style={[styles.skipButton, {top: insets.top + 16}]}>
-            <Text style={styles.skipText}>Skip login</Text>
-          </TouchableOpacity>
-          <Modal
-            animationType="slide"
-            onRequestClose={() => setCountryPickerVisible(false)}
-            transparent
-            visible={countryPickerVisible}>
-            <Pressable
-              onPress={() => setCountryPickerVisible(false)}
-              style={styles.countryModalOverlay}>
-              <Pressable style={[styles.countryModalCard, {paddingBottom: insets.bottom}]}>
-                <View style={styles.countryModalHandle} />
-                <CountryPicker
-                  countryCode={countryCode}
-                  onSelect={onSelectCountry}
-                  withCallingCode
-                  withEmoji
-                  withFilter
-                  withFlag
-                  withModal={false}
-                />
-              </Pressable>
-            </Pressable>
-          </Modal>
+        <TouchableOpacity
+          onPress={skipLogin}
+          style={[styles.skipButton, {top: insets.top + 16}]}>
+          <Text style={styles.skipText}>Skip login</Text>
+        </TouchableOpacity>
       </KeyboardAvoidingView>
     </View>
   );
@@ -803,42 +817,10 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: 16,
   },
-  countryPickerButton: {
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
   countryCode: {
     color: '#303030',
     fontSize: 15,
     fontWeight: '700',
-  },
-  countryPickerChevron: {
-    color: '#606060',
-    fontSize: 14,
-    marginLeft: 6,
-    marginTop: -2,
-  },
-  countryModalOverlay: {
-    backgroundColor: 'rgba(17, 17, 17, 0.32)',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  countryModalCard: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    height: '50%',
-    overflow: 'hidden',
-    width: '100%',
-  },
-  countryModalHandle: {
-    alignSelf: 'center',
-    backgroundColor: '#d7d7d7',
-    borderRadius: 999,
-    height: 5,
-    marginBottom: 8,
-    marginTop: 10,
-    width: 44,
   },
   inputDivider: {
     backgroundColor: '#e8e8e8',
@@ -854,20 +836,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   continueButton: {
-    alignItems: 'center',
-    backgroundColor: '#a2a8b9',
-    borderRadius: 16,
     marginTop: 16,
-    paddingVertical: 14,
   },
   continueButtonActive: {
     backgroundColor: '#171717',
-  },
-  continueButtonContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
   },
   continueText: {
     color: '#ffffff',
@@ -891,25 +863,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
-  googleButton: {
+  socialButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  socialButton: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderColor: '#e8e8e8',
     borderRadius: 16,
     borderWidth: 1,
-    marginTop: 16,
     paddingVertical: 14,
   },
-  googleButtonDisabled: {
-    opacity: 0.7,
+  socialButtonRowItem: {
+    flex: 1,
   },
-  googleButtonContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    justifyContent: 'center',
-  },
-  googleMark: {
+  socialIconBadge: {
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
     borderRadius: 999,
@@ -917,10 +887,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 26,
   },
+  appleButton: {
+    backgroundColor: '#111111',
+    borderColor: '#111111',
+  },
+  appleIconBadge: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
   googleButtonText: {
     color: '#202020',
     fontSize: 16,
     fontWeight: '700',
+  },
+  appleButtonText: {
+    color: '#ffffff',
   },
   termsText: {
     color: '#a6a6a6',

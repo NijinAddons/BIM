@@ -1,6 +1,8 @@
 import {appConfig} from '../../app/config/appConfig';
 import {ApiError} from '../api/apiError';
 import {apiClient} from '../api/apiClient';
+import {logger} from '../../utils/logger';
+import {getFrappeAuthHeaders} from './frappeAuth';
 import {
   FrappeListResponse,
   ProductFilterDataResponse,
@@ -33,16 +35,6 @@ const itemPriceFields = [
   'uom',
   'valid_from',
 ];
-const getAuthHeaders = (): Record<string, string> => {
-  if (!appConfig.frappeApiKey || !appConfig.frappeApiSecret) {
-    return {};
-  }
-
-  return {
-    Authorization: `token ${appConfig.frappeApiKey}:${appConfig.frappeApiSecret}`,
-  };
-};
-
 const buildResourceUrl = (
   doctype: string,
   params: Record<string, string | number>,
@@ -85,8 +77,87 @@ const getPositiveNumber = (value: unknown, fallback: number) => {
   return fallback;
 };
 
+const getRecordItemCode = (record: Record<string, unknown>) =>
+  typeof record.item_code === 'string' ? record.item_code.trim() : '';
+
+const getRecordPrice = (record: Record<string, unknown>) => {
+  const value = record.price_list_rate;
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+};
+
 export const frappeService = {
   fetchAllProducts: async () => {
+    try {
+      const websiteItems = await frappeService.fetchWebsiteItems();
+      const itemPrices = await frappeService.fetchItemPrices(
+        websiteItems
+          .map(item => item.item_code?.trim())
+          .filter((itemCode): itemCode is string => Boolean(itemCode)),
+      );
+      const priceByItemCode = new Map<string, Record<string, unknown>>();
+
+      itemPrices.forEach(priceRecord => {
+        const itemCode = getRecordItemCode(priceRecord);
+        const nextPrice = getRecordPrice(priceRecord);
+        const currentPrice = priceByItemCode.get(itemCode);
+
+        if (!itemCode || nextPrice === null) {
+          return;
+        }
+
+        if (!currentPrice || getRecordPrice(currentPrice) === null) {
+          priceByItemCode.set(itemCode, priceRecord);
+        }
+      });
+
+      const mergedRecords: WebshopProductRecord[] = websiteItems.map(item => {
+        const itemCode = item.item_code?.trim() ?? '';
+        const priceRecord = itemCode ? priceByItemCode.get(itemCode) : null;
+
+        return {
+          ...item,
+          ...(priceRecord ?? {}),
+          web_item_name: item.item_name ?? item.name ?? null,
+        };
+      });
+
+      logger.log('[Product List API] website item catalog response', {
+        websiteItemCount: websiteItems.length,
+        itemPriceCount: itemPrices.length,
+        mergedCount: mergedRecords.length,
+      });
+
+      return mergedRecords;
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 403)
+      ) {
+        logger.warn(
+          '[Product List API] Website Item access denied. Falling back to get_product_filter_data.',
+          error,
+        );
+
+        return frappeService.fetchAllProductsFromFeed();
+      }
+
+      throw error;
+    }
+  },
+  fetchAllProductsFromFeed: async () => {
     const records: WebshopProductRecord[] = [];
     let start = 0;
     let pageSize = 40;
@@ -105,10 +176,17 @@ export const frappeService = {
       });
 
       let result;
+      logger.log('[Product List API] request', {
+        method: 'GET',
+        endpoint: appConfig.allProductsFeedMethod,
+        url,
+        start,
+        useAuthHeaders,
+      });
 
       try {
         result = await apiClient.get<ProductFilterDataResponse>(url, {
-          headers: useAuthHeaders ? getAuthHeaders() : {},
+          headers: useAuthHeaders ? getFrappeAuthHeaders() : {},
           logLabel: 'All products response',
         });
       } catch (error) {
@@ -125,6 +203,12 @@ export const frappeService = {
 
       const message = result.data?.message;
       const pageRecords = Array.isArray(message?.items) ? message.items : [];
+      logger.log('[Product List API] response', {
+        start,
+        itemsReceived: pageRecords.length,
+        totalItemsReported: message?.items_count ?? null,
+        pageSizeReported: message?.settings?.products_per_page ?? null,
+      });
 
       records.push(...pageRecords);
 
@@ -157,7 +241,7 @@ export const frappeService = {
 
       try {
         result = await apiClient.get<FrappeListResponse<WebsiteItemRecord>>(url, {
-          headers: useAuthHeaders ? getAuthHeaders() : {},
+          headers: useAuthHeaders ? getFrappeAuthHeaders() : {},
           logLabel: 'Website Item response',
         });
       } catch (error) {
@@ -173,6 +257,11 @@ export const frappeService = {
       }
       const responseRecords = result.data?.data ?? result.data?.message ?? [];
       const pageRecords = Array.isArray(responseRecords) ? responseRecords : [];
+
+      logger.log('[Website Item API] response', {
+        start,
+        itemsReceived: pageRecords.length,
+      });
 
       records.push(...pageRecords);
 
@@ -197,6 +286,7 @@ export const frappeService = {
     const itemCodeSet = new Set(normalizedItemCodes);
     const matchedRecords: Record<string, unknown>[] = [];
     let start = 0;
+    let useAuthHeaders = true;
 
     while (true) {
       const url = buildResourceUrl('Item Price', {
@@ -206,13 +296,32 @@ export const frappeService = {
         limit_start: start,
       });
 
-      const result = await apiClient.get<FrappeListResponse<Record<string, unknown>>>(url, {
-        headers: getAuthHeaders(),
-        logLabel: 'Item Price response',
-      });
+      let result;
+
+      try {
+        result = await apiClient.get<FrappeListResponse<Record<string, unknown>>>(url, {
+          headers: useAuthHeaders ? getFrappeAuthHeaders() : {},
+          logLabel: 'Item Price response',
+        });
+      } catch (error) {
+        if (useAuthHeaders && error instanceof ApiError && error.status === 401) {
+          useAuthHeaders = false;
+          result = await apiClient.get<FrappeListResponse<Record<string, unknown>>>(url, {
+            headers: {},
+            logLabel: 'Item Price response (without auth)',
+          });
+        } else {
+          throw error;
+        }
+      }
 
       const responseRecords = result.data?.data ?? result.data?.message ?? [];
       const pageRecords = Array.isArray(responseRecords) ? responseRecords : [];
+
+      logger.log('[Item Price API] response', {
+        start,
+        itemsReceived: pageRecords.length,
+      });
 
       matchedRecords.push(
         ...pageRecords.filter(record => {
