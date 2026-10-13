@@ -3,5 +3,9 @@ import support from '../images/support/support.png'
 import wallet from '../images/wallet/wallet.png'
 import appicon from '../images/appicon/appicon.png'
 import bim from '../images/bim/bim.png'
+import banner1 from '../images/banner1/banner1.png'
+import banner2 from '../images/banner2/banner2.png'
+import banner3 from '../images/banner3/banner3.png'
+import splash from '../images/splash/splash.png'
 
-export {bag, support, wallet, appicon,bim}
+export {bag, support, wallet, appicon, bim, banner1, banner2, banner3, splash}

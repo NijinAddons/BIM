@@ -1,232 +1,400 @@
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  Image,
-  Pressable,
+  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { RootStackParamList } from '../app/navigation/types/root-navigation.types';
-import { addProductToCart } from '../features/cart/service';
-import {
-  addWishlistItem,
-  createWishlistItemFromProduct,
-  getWishlistItems,
-  loadStoredWishlist,
-  subscribeWishlist,
-} from '../features/product/service';
-import { Product } from '../features/product/service';
-import { colors } from '../theme/colors';
+import { bim } from '../assets/images';
+import { setCartQty, useCartQty } from '../hooks/useCart';
+import { useDeliveryEstimate } from '../hooks/useDeliveryEstimate';
+import { toggleWishlist, useIsWishlisted } from '../hooks/useWishlist';
+import type { CategoryItem } from '../services';
+
+const BRAND_NAVY = '#1F2E3D';
+const ACCENT_TEAL = '#2ECFC0';
+const MUTED = '#8A94A3';
+const BORDER = '#E1E5EA';
+
+// Trim trailing-zero decimals ("329.00" -> "329", "12.50" -> "12.5") so the
+// price stays compact enough to sit on one row next to the cart control.
+const formatPrice = (value: number) =>
+  Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(2).replace(/\.?0+$/, '');
+
+export type ProductCardItem = CategoryItem;
 
 type Props = {
-  item: Product;
-  onPress?: () => void;
+  item: ProductCardItem;
+  onPress?: (item: ProductCardItem) => void;
+  onQuantityChange?: (item: ProductCardItem, quantity: number) => void;
+  onToggleWishlist?: (item: ProductCardItem) => void;
 };
 
-type ProductCardNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  'ProductDetails'
->;
+type ImageStatus = 'error' | 'loaded' | 'loading';
 
-export default function ProductCard({ item, onPress }: Props) {
-  const navigation = useNavigation<ProductCardNavigationProp>();
-  const wishlistItems = React.useSyncExternalStore(
-    subscribeWishlist,
-    getWishlistItems,
-    getWishlistItems,
+function ProductCard({
+  item,
+  onPress,
+  onQuantityChange,
+  onToggleWishlist,
+}: Props) {
+  const [imageStatus, setImageStatus] = useState<ImageStatus>(
+    item.image ? 'loading' : 'error',
   );
-  const isWishlisted = wishlistItems.some(
-    wishlistItem => wishlistItem.id === item.id,
-  );
-  const shouldShowOfferTag =
-    item.offerTag.trim().toLowerCase() !== item.itemGroup?.trim().toLowerCase();
+  const wishlisted = useIsWishlisted(item.id);
+  const quantity = useCartQty(item.id);
+  const deliveryTime = useDeliveryEstimate({
+    latitude: item.supplierLatitude,
+    longitude: item.supplierLongitude,
+    address: item.supplierAddress,
+  });
 
-  React.useEffect(() => {
-    loadStoredWishlist();
-  }, []);
+  const handlePress = useCallback(() => onPress?.(item), [item, onPress]);
+
+  const handleToggleWishlist = useCallback(() => {
+    toggleWishlist(item);
+    onToggleWishlist?.(item);
+  }, [item, onToggleWishlist]);
+
+  const changeQuantity = useCallback(
+    (next: number) => {
+      setCartQty(item, next);
+      onQuantityChange?.(item, Math.max(0, next));
+    },
+    [item, onQuantityChange],
+  );
+
+  const atMax = !item.rfqOnly && quantity >= item.stock;
+  const handleAdd = useCallback(() => changeQuantity(1), [changeQuantity]);
+  const handleIncrement = useCallback(
+    () => changeQuantity(quantity + 1),
+    [changeQuantity, quantity],
+  );
+  const handleDecrement = useCallback(
+    () => changeQuantity(quantity - 1),
+    [changeQuantity, quantity],
+  );
 
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      onPress={
-        onPress ??
-        (() => navigation.navigate('ProductDetails', { product: item }))
-      }
+      onPress={handlePress}
       style={styles.card}
     >
-      <View style={styles.imageWrap}>
-        <View style={styles.productImage}>
-          <Image
-            source={{ uri: item.image }}
-            style={styles.productImageAsset}
+      <View style={styles.thumbnail}>
+        {item.image ? (
+          <FastImage
+            onError={() => setImageStatus('error')}
+            onLoad={() => setImageStatus('loaded')}
+            resizeMode={FastImage.resizeMode.cover}
+            source={{
+              cache: FastImage.cacheControl.immutable,
+              priority: FastImage.priority.normal,
+              uri: item.image,
+            }}
+            style={styles.thumbnailImage}
           />
-        </View>
-        {shouldShowOfferTag ? (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.offerTag}</Text>
+        ) : null}
+        {imageStatus !== 'loaded' ? (
+          <View style={styles.thumbnailOverlay}>
+            {imageStatus === 'loading' ? (
+              <ActivityIndicator color={MUTED} size="small" />
+            ) : (
+              <FastImage
+                resizeMode={FastImage.resizeMode.contain}
+                source={bim}
+                style={styles.thumbnailFallback}
+              />
+            )}
           </View>
         ) : null}
         <TouchableOpacity
-          activeOpacity={0.85}
-          onPress={async event => {
-            event.stopPropagation();
-            await addWishlistItem(createWishlistItemFromProduct(item));
-            navigation.navigate('Wishlist');
-          }}
-          style={styles.wishlistButton}
+          hitSlop={8}
+          onPress={handleToggleWishlist}
+          style={styles.wishlistBadge}
         >
           <MaterialCommunityIcons
-            color={isWishlisted ? '#ef4662' : colors.mutedText}
-            name={isWishlisted ? 'heart' : 'heart-outline'}
-            size={18}
+            color={wishlisted ? '#E0574F' : '#ffffff'}
+            name={wishlisted ? 'heart' : 'heart-outline'}
+            size={15}
           />
         </TouchableOpacity>
-      </View>
-      <Text numberOfLines={1} style={styles.name}>
-        {item.name}
-      </Text>
-      <Text style={styles.size}>{item.grams}</Text>
-      <View style={styles.footerRow}>
-        <View style={styles.metaRow}>
-          <Text style={styles.price}>AED {item.price}</Text>
-          <View style={styles.sellersBadge}>
-            <Text style={styles.sellers}>
-              Total sellers: {item.totalSellers}
-            </Text>
+
+        {deliveryTime ? (
+          <View style={styles.deliveryBadge}>
+            <MaterialCommunityIcons
+              color="#ffffff"
+              name="clock-fast"
+              size={11}
+            />
+            <Text style={styles.deliveryBadgeText}>{deliveryTime}</Text>
           </View>
+        ) : null}
+      </View>
+
+      <View style={styles.cardInfo}>
+        <View style={styles.itemNameBox}>
+          <Text numberOfLines={2} style={styles.itemName}>
+            {item.name}
+          </Text>
         </View>
-        <Pressable
-          onPress={event => {
-            event.stopPropagation();
-            addProductToCart(item);
-          }}
-          style={({ pressed }) => [
-            styles.addButton,
-            pressed && styles.addButtonPressed,
-          ]}
-        >
-          {({ pressed }) => (
-            <Text style={[styles.addText, pressed && styles.addTextPressed]}>
-              Add to cart
-            </Text>
+
+        <View style={styles.metaRow}>
+          <MaterialCommunityIcons
+            color={MUTED}
+            name="storefront-outline"
+            size={11}
+          />
+          <Text numberOfLines={1} style={styles.metaText}>
+            {item.supplier ?? 'BuyInMinutes'}
+          </Text>
+        </View>
+
+        <View style={styles.priceRow}>
+          <Text numberOfLines={1} style={styles.itemPrice}>
+            AED {formatPrice(item.price)}
+          </Text>
+
+          {/* RFQ items start with the full-width "Request Quote" button below
+              (which adds them to the cart) and aren't limited by stock. */}
+          {item.rfqOnly && quantity === 0 ? null : !item.rfqOnly &&
+            item.stock <= 0 ? (
+            <Text style={styles.soldOutText}>Sold out</Text>
+          ) : quantity === 0 ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              hitSlop={6}
+              onPress={handleAdd}
+              style={styles.cartButton}
+            >
+              <MaterialCommunityIcons
+                color="#ffffff"
+                name="cart-plus"
+                size={16}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.stepper}>
+              <TouchableOpacity
+                hitSlop={6}
+                onPress={handleDecrement}
+                style={styles.stepperButton}
+              >
+                <MaterialCommunityIcons
+                  color="#ffffff"
+                  name={quantity <= 1 ? 'trash-can-outline' : 'minus'}
+                  size={13}
+                />
+              </TouchableOpacity>
+              <Text style={styles.stepperCount}>{quantity}</Text>
+              <TouchableOpacity
+                disabled={atMax}
+                hitSlop={6}
+                onPress={handleIncrement}
+                style={[
+                  styles.stepperButton,
+                  atMax ? styles.stepperButtonDisabled : null,
+                ]}
+              >
+                <MaterialCommunityIcons color="#ffffff" name="plus" size={13} />
+              </TouchableOpacity>
+            </View>
           )}
-        </Pressable>
+        </View>
+
+        {item.rfqOnly && quantity === 0 ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={handleAdd}
+            style={styles.rfqButton}
+          >
+            <MaterialCommunityIcons
+              color="#ffffff"
+              name="file-document-outline"
+              size={13}
+            />
+            <Text style={styles.rfqButtonText}>Request Quote</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
 }
 
+export default React.memo(ProductCard);
+
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 16,
-    borderWidth: 1,
-    height: 228,
-    padding: 10,
-    width: '100%',
-  },
-  imageWrap: {
-    marginBottom: 8,
-    position: 'relative',
-  },
-  productImage: {
-    borderRadius: 12,
-    height: 82,
-    width: '100%',
-  },
-  productImageAsset: {
-    height: '100%',
-    resizeMode: 'contain',
-    width: '100%',
-  },
-  badge: {
-    backgroundColor: '#ef4444',
-    borderRadius: 6,
-    left: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    position: 'absolute',
-    top: 8,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  wishlistButton: {
-    alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderColor: colors.border,
-    borderRadius: 16,
+    borderColor: BORDER,
+    borderRadius: 18,
     borderWidth: 1,
-    height: 32,
+    elevation: 2,
+    flex: 1,
+    overflow: 'hidden',
+    shadowColor: '#0F1B26',
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+  },
+  // White, not grey: card widths are fractional, so the image can round a
+  // pixel short of this box and a grey background showed through as a thin
+  // line under the image. The loading/fallback overlay keeps its own grey.
+  thumbnail: {
+    aspectRatio: 1,
+    backgroundColor: '#ffffff',
+    width: '100%',
+  },
+  thumbnailImage: {
+    height: '100%',
+    width: '100%',
+  },
+  thumbnailFallback: {
+    height: '52%',
+    opacity: 0.9,
+    width: '52%',
+  },
+  thumbnailOverlay: {
+    alignItems: 'center',
+    backgroundColor: '#F2F2F2',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  wishlistBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(31,46,61,0.55)',
+    borderRadius: 13,
+    height: 26,
     justifyContent: 'center',
     position: 'absolute',
-    right: 8,
-    top: 8,
-    width: 32,
+    right: 6,
+    top: 6,
+    width: 26,
   },
-  name: {
-    color: colors.text,
+  deliveryBadge: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(8,24,40,0.72)',
+    borderRadius: 999,
+    bottom: 6,
+    flexDirection: 'row',
+    gap: 3,
+    left: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    position: 'absolute',
+  },
+  deliveryBadgeText: {
+    color: '#ffffff',
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  cardInfo: {
+    paddingBottom: 10,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+  },
+  // Reserves room for 2 lines so cards in the same grid row stay the same
+  // height regardless of name length, but bottom-aligns the text inside it —
+  // a 1-line name then sits right against the supplier row below instead of
+  // leaving a blank line's worth of gap above it.
+  itemNameBox: {
+    height: 34,
+    justifyContent: 'flex-end',
+  },
+  itemName: {
+    color: BRAND_NAVY,
     fontSize: 13,
     fontWeight: '700',
-  },
-  size: {
-    color: colors.mutedText,
-    fontSize: 12,
-    marginTop: 3,
-  },
-  footerRow: {
-    gap: 8,
-    marginTop: 'auto',
+    lineHeight: 17,
   },
   metaRow: {
-    gap: 2,
-  },
-  price: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  sellers: {
-    color: '#0f766e',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  sellersBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#e6fffa',
-    borderColor: '#99f6e4',
-    borderRadius: 999,
-    borderWidth: 1,
-    marginTop: 2,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  addButton: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: colors.tagGreen,
-    borderRadius: 8,
-    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+  },
+  metaText: {
+    color: MUTED,
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  priceRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  itemPrice: {
+    color: BRAND_NAVY,
+    flexShrink: 1,
+    fontSize: 13.5,
+    fontWeight: '800',
+    marginRight: 8,
+  },
+  cartButton: {
+    alignItems: 'center',
+    backgroundColor: BRAND_NAVY,
+    borderRadius: 999,
+    height: 32,
+    justifyContent: 'center',
+    width: 48,
+  },
+  rfqButton: {
+    alignItems: 'center',
+    backgroundColor: BRAND_NAVY,
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 5,
+    justifyContent: 'center',
+    marginTop: 8,
     paddingVertical: 8,
     width: '100%',
   },
-  addButtonPressed: {
-    backgroundColor: colors.tagGreen,
-  },
-  addText: {
-    color: colors.tagGreen,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  addTextPressed: {
+  rfqButtonText: {
     color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  stepper: {
+    alignItems: 'center',
+    backgroundColor: ACCENT_TEAL,
+    borderRadius: 999,
+    flexDirection: 'row',
+    flexShrink: 0,
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  stepperButton: {
+    alignItems: 'center',
+    height: 16,
+    justifyContent: 'center',
+    width: 16,
+  },
+  stepperButtonDisabled: {
+    opacity: 0.35,
+  },
+  stepperCount: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
+    minWidth: 12,
+    textAlign: 'center',
+  },
+  soldOutText: {
+    color: '#C0392B',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

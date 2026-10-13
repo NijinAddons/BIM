@@ -1,12 +1,11 @@
-export const colors = {
-  background: '#fff9e8',
-  surface: '#ffffff',
-  primary: '#f5c400',
-  primaryDark: '#121212',
-  text: '#1b1b1b',
-  mutedText: '#666666',
-  border: '#ece7d8',
-  tagGreen: '#1f9d55',
-  cardBlue: '#dff0ff',
-  cardPeach: '#ffe7c8',
-};
+export const NAVY = '#081828';
+export const GREEN = '#006D37';
+export const GREEN_TINT = '#E4F3EA';
+export const TEAL = '#00A593';
+export const SURFACE = '#F8F9FA';
+export const CARD = '#FFFFFF';
+export const BORDER = '#E1E3E4';
+export const HAIRLINE = '#C4C6CC';
+export const TEXT = '#191C1D';
+export const TEXT_VARIANT = '#44474C';
+export const MUTED = '#74777D';

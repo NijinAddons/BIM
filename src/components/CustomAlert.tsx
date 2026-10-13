@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
+  Animated,
   Modal,
   Pressable,
   StyleSheet,
@@ -7,25 +8,49 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+
+import {
+  BORDER,
+  CARD,
+  GREEN,
+  GREEN_TINT,
+  MUTED,
+  SURFACE,
+  TEXT,
+} from '../theme/colors';
+
+const DANGER = '#D92D20';
+const DANGER_TINT = '#FEECEB';
+
+type Variant = 'primary' | 'destructive';
 
 type Props = {
   visible: boolean;
   title: string;
   message: string;
+  /** MaterialCommunityIcons name; defaults to one matching the variant. */
+  icon?: string;
   buttonLabel?: string;
   primaryButtonLabel?: string;
   secondaryButtonLabel?: string;
-  primaryButtonVariant?: 'primary' | 'destructive';
+  primaryButtonVariant?: Variant;
   onButtonPress?: () => void;
   onPrimaryButtonPress?: () => void;
   onSecondaryButtonPress?: () => void;
   onClose: () => void;
 };
 
+const DEFAULT_ICON: Record<Variant, string> = {
+  primary: 'information-variant',
+  destructive: 'trash-can-outline',
+};
+
 export default function CustomAlert({
   visible,
   title,
   message,
+  icon,
   buttonLabel,
   primaryButtonLabel = 'Okay',
   secondaryButtonLabel,
@@ -37,6 +62,22 @@ export default function CustomAlert({
 }: Props) {
   const resolvedPrimaryButtonLabel = buttonLabel ?? primaryButtonLabel;
   const resolvedPrimaryButtonPress = onPrimaryButtonPress ?? onButtonPress;
+  const destructive = primaryButtonVariant === 'destructive';
+  const accent = destructive ? DANGER : GREEN;
+
+  // The card pops in slightly scaled down while the Modal fades the backdrop.
+  const scale = useRef(new Animated.Value(0.9)).current;
+  useEffect(() => {
+    if (visible) {
+      scale.setValue(0.9);
+      Animated.spring(scale, {
+        friction: 7,
+        tension: 90,
+        toValue: 1,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [scale, visible]);
 
   const handlePrimaryButtonPress = () => {
     onClose();
@@ -52,22 +93,41 @@ export default function CustomAlert({
     <Modal
       animationType="fade"
       onRequestClose={onClose}
+      statusBarTranslucent
       transparent
       visible={visible}>
       <View style={styles.overlay}>
-        <Pressable onPress={onClose} style={styles.backdrop} />
-        <View style={styles.card}>
-          <View style={styles.iconWrap}>
-            <View style={styles.iconCore}>
-              <Text style={styles.iconMark}>!</Text>
+        <Pressable onPress={onClose} style={StyleSheet.absoluteFill} />
+        <Animated.View style={[styles.card, { transform: [{ scale }] }]}>
+          <TouchableOpacity
+            accessibilityLabel="Close"
+            hitSlop={10}
+            onPress={onClose}
+            style={styles.closeButton}>
+            <MaterialCommunityIcons color={MUTED} name="close" size={20} />
+          </TouchableOpacity>
+
+          <View
+            style={[
+              styles.iconRing,
+              { backgroundColor: destructive ? DANGER_TINT : GREEN_TINT },
+            ]}>
+            <View style={[styles.iconCore, { backgroundColor: accent }]}>
+              <MaterialCommunityIcons
+                color="#ffffff"
+                name={icon ?? DEFAULT_ICON[primaryButtonVariant]}
+                size={26}
+              />
             </View>
           </View>
+
           <Text style={styles.title}>{title}</Text>
           <Text style={styles.message}>{message}</Text>
-          <View style={styles.actionsRow}>
+
+          <View style={styles.actions}>
             {secondaryButtonLabel ? (
               <TouchableOpacity
-                activeOpacity={0.9}
+                activeOpacity={0.85}
                 onPress={handleSecondaryButtonPress}
                 style={[styles.button, styles.secondaryButton]}>
                 <Text style={[styles.buttonText, styles.secondaryButtonText]}>
@@ -76,19 +136,13 @@ export default function CustomAlert({
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              activeOpacity={0.9}
+              activeOpacity={0.85}
               onPress={handlePrimaryButtonPress}
-              style={[
-                styles.button,
-                primaryButtonVariant === 'destructive'
-                  ? styles.destructiveButton
-                  : styles.primaryButton,
-                !secondaryButtonLabel && styles.singleButton,
-              ]}>
+              style={[styles.button, { backgroundColor: accent }]}>
               <Text style={styles.buttonText}>{resolvedPrimaryButtonLabel}</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -97,102 +151,82 @@ export default function CustomAlert({
 const styles = StyleSheet.create({
   overlay: {
     alignItems: 'center',
-    backgroundColor: 'rgba(10, 16, 13, 0.28)',
+    backgroundColor: 'rgba(8, 24, 40, 0.5)',
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  backdrop: {
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
+    paddingHorizontal: 28,
   },
   card: {
     alignItems: 'center',
-    backgroundColor: '#fffdf7',
-    borderColor: '#e7dcc5',
-    borderRadius: 28,
-    borderWidth: 1,
-    elevation: 12,
-    maxWidth: 360,
-    paddingBottom: 24,
-    paddingHorizontal: 24,
-    paddingTop: 22,
-    shadowColor: '#000000',
-    shadowOffset: {
-      width: 0,
-      height: 10,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 22,
+    backgroundColor: CARD,
+    borderRadius: 24,
+    elevation: 16,
+    maxWidth: 340,
+    paddingBottom: 20,
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    shadowColor: '#081828',
+    shadowOffset: { height: 12, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
     width: '100%',
   },
-  iconWrap: {
+  closeButton: {
     alignItems: 'center',
-    backgroundColor: '#fff1bf',
-    borderColor: '#f4d77f',
-    borderRadius: 24,
-    borderWidth: 1,
-    height: 48,
+    backgroundColor: SURFACE,
+    borderRadius: 16,
+    height: 32,
     justifyContent: 'center',
-    marginBottom: 16,
-    width: 48,
+    position: 'absolute',
+    right: 14,
+    top: 14,
+    width: 32,
+  },
+  iconRing: {
+    alignItems: 'center',
+    borderRadius: 40,
+    height: 80,
+    justifyContent: 'center',
+    marginBottom: 18,
+    width: 80,
   },
   iconCore: {
     alignItems: 'center',
-    backgroundColor: '#0f5c45',
-    borderRadius: 14,
-    height: 28,
+    borderRadius: 28,
+    height: 56,
     justifyContent: 'center',
-    width: 28,
-  },
-  iconMark: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '900',
-    lineHeight: 20,
+    width: 56,
   },
   title: {
-    color: '#15392d',
-    fontSize: 21,
+    color: TEXT,
+    fontSize: 19,
     fontWeight: '800',
-    marginBottom: 10,
+    marginBottom: 8,
     textAlign: 'center',
   },
   message: {
-    color: '#5a655f',
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 20,
+    color: MUTED,
+    fontSize: 14,
+    lineHeight: 21,
+    marginBottom: 24,
     textAlign: 'center',
   },
-  actionsRow: {
+  actions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     width: '100%',
   },
   button: {
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: 14,
     flex: 1,
-    paddingHorizontal: 22,
-    paddingVertical: 14,
-  },
-  singleButton: {
-    flexGrow: 0,
-    minWidth: 140,
-  },
-  primaryButton: {
-    backgroundColor: '#0f5c45',
-  },
-  destructiveButton: {
-    backgroundColor: '#c2410c',
+    justifyContent: 'center',
+    minHeight: 50,
+    paddingHorizontal: 16,
   },
   secondaryButton: {
-    backgroundColor: '#fff7e8',
-    borderColor: '#ead7b5',
+    backgroundColor: SURFACE,
+    borderColor: BORDER,
     borderWidth: 1,
   },
   buttonText: {
@@ -201,6 +235,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   secondaryButtonText: {
-    color: '#15392d',
+    color: TEXT,
   },
 });

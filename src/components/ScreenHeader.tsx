@@ -1,87 +1,34 @@
-import React from 'react';
-import {
-  Image,
-  ImageSourcePropType,
-  Pressable,
-  StyleProp,
-  StyleSheet,
-  Text,
-  View,
-  ViewStyle,
-} from 'react-native';
+import React, {ReactNode} from 'react';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import {colors} from '../theme/colors';
+const BRAND_NAVY = '#1F2E3D';
 
-type ScreenHeaderProps = {
+type Props = {
+  onBack?: () => void;
+  rightAccessory?: ReactNode;
+  subtitle?: string;
   title: string;
-  titleIcon?: ImageSourcePropType;
-  leadingIcon?: ImageSourcePropType;
-  collapseLeadingSpace?: boolean;
-  containerStyle?: StyleProp<ViewStyle>;
-  titleStyle?: object;
-  onBackPress?: () => void;
-  plainBackButton?: boolean;
-  actions?: {
-    icon: string;
-    label: string;
-    color?: string;
-    onPress: () => void;
-  }[];
 };
 
-export default function ScreenHeader({
-  title,
-  titleIcon,
-  leadingIcon,
-  collapseLeadingSpace = false,
-  containerStyle,
-  titleStyle,
-  onBackPress,
-  plainBackButton = false,
-  actions = [],
-}: ScreenHeaderProps) {
+export default function ScreenHeader({onBack, rightAccessory, subtitle, title}: Props) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.header, containerStyle]}>
-      {onBackPress ? (
-        <Pressable
-          hitSlop={10}
-          onPress={onBackPress}
-          style={plainBackButton ? styles.backButtonPlain : styles.backButton}>
-          <MaterialCommunityIcons color={colors.text} name="arrow-left" size={22} />
+    <View style={[styles.header, {paddingTop: insets.top + 6}]}>
+      {onBack ? (
+        <Pressable hitSlop={8} onPress={onBack} style={styles.backButton}>
+          <MaterialCommunityIcons color="#F5FAFC" name="chevron-left" size={24} />
         </Pressable>
-      ) : leadingIcon ? (
-        <Image source={leadingIcon} style={styles.leadingIcon} />
-      ) : (
-        <View style={collapseLeadingSpace ? styles.headerSpacerCollapsed : styles.headerSpacer} />
-      )}
-      <View style={styles.titleWrap}>
-        {titleIcon ? <Image source={titleIcon} style={styles.titleIcon} /> : null}
-        <Text numberOfLines={1} style={[styles.headerTitle, titleStyle]}>
+      ) : null}
+      <View style={styles.textBlock}>
+        <Text numberOfLines={1} style={styles.title}>
           {title}
         </Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      {actions.length > 0 ? (
-        <View style={styles.actionsRow}>
-          {actions.map(action => (
-            <Pressable
-              accessibilityLabel={action.label}
-              accessibilityRole="button"
-              hitSlop={8}
-              key={action.label}
-              onPress={action.onPress}
-              style={styles.actionButton}>
-              <MaterialCommunityIcons
-                color={action.color ?? colors.text}
-                name={action.icon}
-                size={21}
-              />
-            </Pressable>
-          ))}
-        </View>
-      ) : (
-        <View style={styles.headerSpacer} />
-      )}
+      {rightAccessory ? <View style={styles.accessory}>{rightAccessory}</View> : null}
     </View>
   );
 }
@@ -89,69 +36,36 @@ export default function ScreenHeader({
 const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
+    backgroundColor: BRAND_NAVY,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    paddingBottom: 10,
+    paddingHorizontal: 20,
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderRadius: 18,
-    borderWidth: 1,
     height: 36,
     justifyContent: 'center',
+    marginRight: 12,
     width: 36,
   },
-  backButtonPlain: {
-    alignItems: 'center',
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  titleWrap: {
-    alignItems: 'center',
+  textBlock: {
     flex: 1,
-    flexDirection: 'row',
-    marginHorizontal: 12,
   },
-  titleIcon: {
-    borderRadius: 10,
-    height: 28,
-    marginRight: 8,
-    width: 28,
-  },
-  leadingIcon: {
-    borderRadius: 10,
-    height: 36,
-    width: 36,
-  },
-  headerTitle: {
-    color: colors.text,
-    flex: 1,
-    fontSize: 18,
+  title: {
+    color: '#F5FAFC',
+    fontSize: 20,
     fontWeight: '800',
-    textAlign: 'left',
   },
-  headerSpacer: {
-    width: 36,
+  subtitle: {
+    color: '#9FB0BD',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
   },
-  headerSpacerCollapsed: {
-    width: 0,
-  },
-  actionsRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderColor: colors.border,
-    borderRadius: 18,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
+  accessory: {
+    marginLeft: 12,
   },
 });

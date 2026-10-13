@@ -41,6 +41,14 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Generated from .env by scripts/gen-env.js
+/src/config.ts
+
 # fastlane
 #
 # It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the

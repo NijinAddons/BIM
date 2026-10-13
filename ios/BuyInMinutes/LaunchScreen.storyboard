@@ -17,17 +17,15 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="U7L-Xv-v4E">
-                                <rect key="frame" x="127.5" y="275.5" width="120" height="120"/>
-                                <constraints>
-                                    <constraint firstAttribute="width" constant="120" id="3lJ-9W-fWC"/>
-                                    <constraint firstAttribute="height" constant="120" id="UtL-Lw-Bm3"/>
-                                </constraints>
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor" cocoaTouchSystemColor="whiteColor"/>
+                        <color key="backgroundColor" red="0.18431372549019609" green="0.27058823529411763" blue="0.36078431372549019" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="U7L-Xv-v4E" firstAttribute="centerX" secondItem="Bcu-3y-fUS" secondAttribute="centerX" id="JQx-t0-MdL"/>
+                            <constraint firstItem="U7L-Xv-v4E" firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX" id="JQx-t0-MdL"/>
                             <constraint firstItem="U7L-Xv-v4E" firstAttribute="centerY" secondItem="Ze5-6b-2t3" secondAttribute="centerY" id="lVa-LS-Dq2"/>
+                            <constraint firstItem="U7L-Xv-v4E" firstAttribute="width" secondItem="Ze5-6b-2t3" secondAttribute="width" multiplier="0.6" id="Tr1-Lg-Bm3"/>
+                            <constraint firstItem="U7L-Xv-v4E" firstAttribute="height" secondItem="U7L-Xv-v4E" secondAttribute="width" multiplier="1:1" id="To1-Pp-Bm3"/>
                         </constraints>
                         <viewLayoutGuide key="safeArea" id="Bcu-3y-fUS"/>
                     </view>
