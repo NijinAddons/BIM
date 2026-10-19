@@ -32,6 +32,11 @@ export type ProductCardItem = CategoryItem;
 type Props = {
   item: ProductCardItem;
   onPress?: (item: ProductCardItem) => void;
+  /**
+   * Replaces ADD TO CART's direct add, e.g. to pick a size/colour first.
+   * The stepper shown once the item is in the cart still adds directly.
+   */
+  onAddPress?: (item: ProductCardItem) => void;
   onQuantityChange?: (item: ProductCardItem, quantity: number) => void;
   onToggleWishlist?: (item: ProductCardItem) => void;
 };
@@ -41,6 +46,7 @@ type ImageStatus = 'error' | 'loaded' | 'loading';
 function ProductCard({
   item,
   onPress,
+  onAddPress,
   onQuantityChange,
   onToggleWishlist,
 }: Props) {
@@ -74,7 +80,10 @@ function ProductCard({
   );
 
   const atMax = !item.rfqOnly && quantity >= item.stock;
-  const handleAdd = useCallback(() => changeQuantity(1), [changeQuantity]);
+  const handleAdd = useCallback(
+    () => (onAddPress ? onAddPress(item) : changeQuantity(1)),
+    [onAddPress, item, changeQuantity],
+  );
   const handleIncrement = useCallback(
     () => changeQuantity(quantity + 1),
     [changeQuantity, quantity],

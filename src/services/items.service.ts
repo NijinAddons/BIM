@@ -122,9 +122,13 @@ export type CategoryItem = {
   // checkout doesn't send it to ERPNext yet.
   kitPlan?: KitPlan;
   // Item "Details" section (ERPNext `custom_country_of_orgin`,
-  // `custom_fabric`), or null/unset when blank.
+  // `custom_fabric`, `custom_manufacturer`, `custom_item_weight`,
+  // `custom_item_dimensions_lwh`), or null/unset when blank.
   countryOfOrigin?: string | null;
   fabric?: string | null;
+  manufacturer?: string | null;
+  itemWeight?: string | null;
+  itemDimensions?: string | null;
   /** Plain text — ERPNext stores the description as HTML. */
   description?: string | null;
 };
@@ -164,6 +168,9 @@ type ItemResponse = {
   custom_delivery_fee?: number | null;
   custom_delivery_slots?: boolean | number | string | null;
   custom_fabric?: string | null;
+  custom_manufacturer?: string | null;
+  custom_item_weight?: string | null;
+  custom_item_dimensions_lwh?: string | null;
   custom_out_of_stock?: boolean | number | string | null;
   custom_stock_qty?: number | null;
   description?: string | null;
@@ -351,6 +358,9 @@ function mapItem(item: ItemResponse, fallbackGroup = ''): CategoryItem {
     rfqOnly: toTruthyFlag(item.custom_rfq_only),
     countryOfOrigin: item.custom_country_of_orgin?.trim() || null,
     fabric: item.custom_fabric?.trim() || null,
+    manufacturer: item.custom_manufacturer?.trim() || null,
+    itemWeight: item.custom_item_weight?.trim() || null,
+    itemDimensions: item.custom_item_dimensions_lwh?.trim() || null,
     description: resolveDescription(item),
   };
 }
@@ -389,7 +399,11 @@ export async function fetchItemImages(item: CategoryItem): Promise<string[]> {
 const PUBLISHED_REUSE_MS = 5000;
 type PublishedItemDetails = Pick<
   ItemResponse,
-  'custom_country_of_orgin' | 'custom_fabric'
+  | 'custom_country_of_orgin'
+  | 'custom_fabric'
+  | 'custom_manufacturer'
+  | 'custom_item_weight'
+  | 'custom_item_dimensions_lwh'
 >;
 
 let publishedItems: {
@@ -405,7 +419,14 @@ function getPublishedItems(): Promise<Map<string, PublishedItemDetails>> {
   const pending = fetchResourceList<PublishedItemDetails & { name: string }>(
     'Item',
     {
-      fields: ['name', 'custom_country_of_orgin', 'custom_fabric'],
+      fields: [
+        'name',
+        'custom_country_of_orgin',
+        'custom_fabric',
+        'custom_manufacturer',
+        'custom_item_weight',
+        'custom_item_dimensions_lwh',
+      ],
       filters: [['custom_published', '=', 1]],
       limit: 0,
     },

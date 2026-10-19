@@ -176,8 +176,8 @@ function Dropdown({
 }
 
 // Descriptions are typed in Markdown (`* ` / `- ` bullets, `**bold**`).
-// Every non-empty line becomes one point; a lone "Product Description"
-// heading is dropped since the section already has a title.
+// Every non-empty line becomes one point; a lone "Product Description" or
+// "Product Highlights" heading is dropped since the section has a title.
 function descriptionPoints(text: string): string[] {
   return text
     .split('\n')
@@ -185,7 +185,7 @@ function descriptionPoints(text: string): string[] {
     .filter(
       line =>
         line !== '' &&
-        !/^(\*\*)?\s*product description\s*:?\s*(\*\*)?$/i.test(line),
+        !/^(\*\*)?\s*product (description|highlights)\s*:?\s*(\*\*)?$/i.test(line),
     );
 }
 
@@ -516,6 +516,9 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
   const productDetails = [
     { label: 'Country of origin', value: item.countryOfOrigin },
     { label: 'Fabric', value: item.fabric },
+    { label: 'Manufacturer', value: item.manufacturer },
+    { label: 'Item weight', value: item.itemWeight },
+    { label: 'Item dimensions', value: item.itemDimensions },
   ].filter((detail): detail is VariantDetail => !!detail.value);
 
   // Reset the gallery when the variant changes.
@@ -812,7 +815,7 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
             <CollapsibleSection
               defaultOpen
               key={`desc-${item.id}`}
-              title="Product Description"
+              title="Product Highlights"
             >
               <DescriptionPoints points={descriptionList} />
             </CollapsibleSection>

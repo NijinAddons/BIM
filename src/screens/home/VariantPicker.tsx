@@ -68,7 +68,7 @@ function isLightColor(hex: string): boolean {
 
 const isColorAttribute = (label: string) => /colou?r/i.test(label);
 
-function Swatch({ attribute, value }: { attribute: string; value: string }) {
+export function Swatch({ attribute, value }: { attribute: string; value: string }) {
   const swatch = isColorAttribute(attribute) ? colorFor(value) : null;
   if (!swatch) {
     return null;

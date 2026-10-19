@@ -12,7 +12,6 @@ import {
   Image,
   ListRenderItemInfo,
   Modal,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -477,31 +476,27 @@ const BrandScreen = ({ navigation, route }: Props) => {
 
   const infoPills = useMemo(
     () => (
-      <ScrollView
-        contentContainerStyle={styles.pillRowContent}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.pillRow}
-      >
-        <View style={styles.pill}>
+      // One line under "Verified brand", on the same left edge.
+      <View style={styles.metaRow}>
+        <View style={styles.verifiedRow}>
           <MaterialCommunityIcons
             color={BRAND_NAVY}
             name="shopping-outline"
-            size={13}
+            size={14}
           />
-          <Text style={styles.pillText}>{productCount} products</Text>
+          <Text style={styles.metaText}>{productCount} products</Text>
         </View>
         {deliveryEstimate ? (
-          <View style={styles.pill}>
+          <View style={styles.verifiedRow}>
             <MaterialCommunityIcons
               color={ACCENT_TEAL}
               name="clock-fast"
-              size={13}
+              size={14}
             />
-            <Text style={styles.pillText}>{deliveryEstimate}</Text>
+            <Text style={styles.metaText}>{deliveryEstimate}</Text>
           </View>
         ) : null}
-      </ScrollView>
+      </View>
     ),
     [productCount, deliveryEstimate],
   );
@@ -545,9 +540,8 @@ const BrandScreen = ({ navigation, route }: Props) => {
             />
             <Text style={styles.verifiedText}>Verified brand</Text>
           </View>
+          {infoPills}
         </View>
-
-        {infoPills}
 
         {description ? (
           <View style={styles.aboutBlock}>
@@ -830,25 +824,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* Info pills */
-  pillRow: {
-    marginTop: 14,
-  },
-  pillRowContent: {
-    gap: 8,
-    paddingHorizontal: GRID_PADDING,
-  },
-  pill: {
-    alignItems: 'center',
-    backgroundColor: '#F4F6F8',
-    borderRadius: 999,
+  metaRow: {
+    columnGap: 14,
     flexDirection: 'row',
-    gap: 5,
-    maxWidth: 220,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    flexWrap: 'wrap',
+    marginTop: 8,
   },
-  pillText: {
+  metaText: {
     color: BRAND_NAVY,
     fontSize: 12,
     fontWeight: '700',

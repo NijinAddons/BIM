@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {ActivityIndicator, Dimensions, FlatList, ListRenderItemInfo, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {ActionButton, AppRefreshControl, ProductCard, ProductFilterBar, ScreenHeader, useProductFilters} from '../../components';
@@ -6,6 +6,7 @@ import {isWishlisted} from '../../hooks/useWishlist';
 import type {RootStackScreenProps} from '../../navigation/types';
 import {useItemsByBrandGroup, useProductBundles} from '../../queries';
 import type {CategoryItem} from '../../services';
+import VariantAddSheet from './VariantAddSheet';
 
 const BRAND_NAVY = '#1F2E3D';
 const ACCENT_TEAL = '#2ECFC0';
@@ -33,6 +34,26 @@ const BrandCategoryItemsScreen = ({navigation, route}: Props) => {
     return (itemsQuery.data ?? EMPTY_ITEMS).filter(item => !kitIds.has(item.id));
   }, [itemsQuery.data, bundlesQuery.data]);
   const filters = useProductFilters(items);
+
+  // Variants of one product, keyed by their template (`variantOf`). A card
+  // whose product comes in several variants picks one in a sheet on ADD TO
+  // CART instead of adding straight away.
+  const families = useMemo(() => {
+    const map = new Map<string, CategoryItem[]>();
+    for (const item of items) {
+      if (item.variantOf) {
+        map.set(item.variantOf, [...(map.get(item.variantOf) ?? []), item]);
+      }
+    }
+    return map;
+  }, [items]);
+  const [sheetItem, setSheetItem] = useState<CategoryItem | null>(null);
+  const openSheet = useCallback((item: CategoryItem) => setSheetItem(item), []);
+  const closeSheet = useCallback(() => setSheetItem(null), []);
+  const sheetFamily = useMemo(
+    () => (sheetItem?.variantOf ? families.get(sheetItem.variantOf) ?? [sheetItem] : []),
+    [families, sheetItem],
+  );
   const loading = itemsQuery.isPending && !itemsQuery.isError;
   // A failed refetch keeps showing the items we already have.
   const error =
@@ -48,6 +69,11 @@ const BrandCategoryItemsScreen = ({navigation, route}: Props) => {
       <View style={styles.cardWrapper}>
         <ProductCard
           item={item}
+          onAddPress={
+            item.variantOf && (families.get(item.variantOf)?.length ?? 0) > 1
+              ? openSheet
+              : undefined
+          }
           onPress={() => navigation.navigate('ProductDetail', {item})}
           onToggleWishlist={() => {
             if (isWishlisted(item.id)) {
@@ -57,7 +83,7 @@ const BrandCategoryItemsScreen = ({navigation, route}: Props) => {
         />
       </View>
     ),
-    [navigation],
+    [navigation, families, openSheet],
   );
 
   return (
@@ -110,6 +136,8 @@ const BrandCategoryItemsScreen = ({navigation, route}: Props) => {
           showsVerticalScrollIndicator={false}
         />
       )}
+
+      <VariantAddSheet family={sheetFamily} item={sheetItem} onClose={closeSheet} />
     </View>
   );
 };
