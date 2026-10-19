@@ -13,12 +13,12 @@ import { bim } from '../assets/images';
 import { setCartQty, useCartQty } from '../hooks/useCart';
 import { useDeliveryEstimate } from '../hooks/useDeliveryEstimate';
 import { toggleWishlist, useIsWishlisted } from '../hooks/useWishlist';
-import type { CategoryItem } from '../services';
+import { isVegetableItem, type CategoryItem } from '../services';
 
 const BRAND_NAVY = '#1F2E3D';
 const ACCENT_TEAL = '#2ECFC0';
 const MUTED = '#8A94A3';
-const BORDER = '#E1E5EA';
+const BORDER = '#EEF1F4';
 
 // Trim trailing-zero decimals ("329.00" -> "329", "12.50" -> "12.5") so the
 // price stays compact enough to sit on one row next to the cart control.
@@ -54,6 +54,9 @@ function ProductCard({
     longitude: item.supplierLongitude,
     address: item.supplierAddress,
   });
+
+  // Vegetables carry their brand here instead of the supplier.
+  const showBrand = isVegetableItem(item) && !!item.brand;
 
   const handlePress = useCallback(() => onPress?.(item), [item, onPress]);
 
@@ -92,7 +95,7 @@ function ProductCard({
           <FastImage
             onError={() => setImageStatus('error')}
             onLoad={() => setImageStatus('loaded')}
-            resizeMode={FastImage.resizeMode.cover}
+            resizeMode={FastImage.resizeMode.contain}
             source={{
               cache: FastImage.cacheControl.immutable,
               priority: FastImage.priority.normal,
@@ -148,11 +151,11 @@ function ProductCard({
         <View style={styles.metaRow}>
           <MaterialCommunityIcons
             color={MUTED}
-            name="storefront-outline"
+            name={showBrand ? 'tag-outline' : 'storefront-outline'}
             size={11}
           />
           <Text numberOfLines={1} style={styles.metaText}>
-            {item.supplier ?? 'BuyInMinutes'}
+            {showBrand ? item.brand : item.supplier ?? 'BuyInMinutes'}
           </Text>
         </View>
 
@@ -171,13 +174,11 @@ function ProductCard({
               activeOpacity={0.85}
               hitSlop={6}
               onPress={handleAdd}
-              style={styles.cartButton}
+              style={styles.addButton}
             >
-              <MaterialCommunityIcons
-                color="#ffffff"
-                name="cart-plus"
-                size={16}
-              />
+              <Text numberOfLines={1} style={styles.addButtonText}>
+                ADD TO CART
+              </Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.stepper}>
@@ -235,13 +236,12 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     borderRadius: 18,
     borderWidth: 1,
-    elevation: 2,
+    // boxShadow instead of Android `elevation`, whose shadow is dark and
+    // pooled under the card's bottom edge; this renders the same soft shadow
+    // on both platforms.
+    boxShadow: '0px 2px 8px rgba(15, 27, 38, 0.05)',
     flex: 1,
     overflow: 'hidden',
-    shadowColor: '#0F1B26',
-    shadowOffset: { height: 4, width: 0 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
   },
   // White, not grey: card widths are fractional, so the image can round a
   // pixel short of this box and a grey background showed through as a thin
@@ -342,13 +342,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginRight: 8,
   },
-  cartButton: {
+  // Sits on the price row, so it's kept compact: the label must fit beside
+  // "AED 000.00" on a half-width grid card.
+  addButton: {
     alignItems: 'center',
     backgroundColor: BRAND_NAVY,
-    borderRadius: 999,
-    height: 32,
+    borderRadius: 6,
+    flexShrink: 0,
+    height: 30,
     justifyContent: 'center',
-    width: 48,
+    paddingHorizontal: 10,
+  },
+  addButtonText: {
+    color: '#ffffff',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   rfqButton: {
     alignItems: 'center',

@@ -84,8 +84,8 @@ android {
         applicationId "com.addons.buyinminutes"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0"
+        versionCode 3
+        versionName "1.0.1"
     }
     signingConfigs {
         debug {
@@ -132,6 +132,9 @@ dependencies {
     // and maps libraries already bundle this transitively at runtime, but
     // declare it as `implementation`, which doesn't expose it to app code.
     implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // SMS User Consent API for OTP autofill (SmsUserConsentModule.kt).
+    implementation("com.google.android.gms:play-services-auth-api-phone:18.1.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

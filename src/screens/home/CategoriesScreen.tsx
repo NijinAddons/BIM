@@ -1,25 +1,25 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Dimensions,
   Image,
-  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFocusEffect} from '@react-navigation/native';
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {ActionButton, ProductCard, ScreenHeader} from '../../components';
+import {ActionButton, AppRefreshControl, NotificationBell, ProductCard, ScreenHeader} from '../../components';
+import {useAuthStatus} from '../../hooks/useAuth';
 import {bim} from '../../assets/images';
 import {isWishlisted} from '../../hooks/useWishlist';
 import type {CategoriesStackScreenProps} from '../../navigation/types';
-import {useCategories, useItemsByGroup, useManualRefresh} from '../../queries';
+import {invalidateCatalog, useCategories, useItemsByGroup} from '../../queries';
 import {Category, CategoryItem, TOP_LEVEL_PARENT} from '../../services';
 import {BORDER, CARD, GREEN, GREEN_TINT, MUTED, SURFACE, TEXT, TEXT_VARIANT} from '../../theme/colors';
 
@@ -81,12 +81,21 @@ const CategoriesScreen = ({navigation, route}: Props) => {
   const loadCategories = useCallback(() => {
     categoriesQuery.refetch();
   }, [categoriesQuery]);
-  const refreshCategories = useCallback(async () => {
-    await categoriesQuery.refetch();
-  }, [categoriesQuery]);
+  // Pull-to-refresh reloads the whole catalog, not just the list on screen,
+  // so every category picks up items (un)published since it was cached.
+  const refreshCategories = invalidateCatalog;
 
-  // Pull-to-refresh: refetch without the full-screen spinner.
-  const {refreshing, onRefresh: handleRefresh} = useManualRefresh(refreshCategories);
+  // Coming back to the Categories tab re-checks the catalog in the
+  // background (the first focus is the initial load, so it's skipped).
+  const focusedBefore = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (isRoot && focusedBefore.current) {
+        invalidateCatalog();
+      }
+      focusedBefore.current = true;
+    }, [isRoot]),
+  );
 
   const categories = useMemo(
     () => allCategories.filter(category => category.parentId === parentId),
@@ -157,7 +166,7 @@ const CategoriesScreen = ({navigation, route}: Props) => {
         <ScrollView
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl colors={[ACCENT_TEAL]} onRefresh={handleRefresh} refreshing={refreshing} tintColor={ACCENT_TEAL} />
+            <AppRefreshControl color={ACCENT_TEAL} onRefresh={refreshCategories} />
           }
           showsVerticalScrollIndicator={false}>
           <View style={styles.row}>
@@ -172,7 +181,7 @@ const CategoriesScreen = ({navigation, route}: Props) => {
 };
 
 // ---------------------------------------------------------------------------
-// Root tab layout: search header + left category rail + right explore pane.
+// Root tab layout: title header + left category rail + right explore pane.
 // ---------------------------------------------------------------------------
 
 type RootCategoriesViewProps = {
@@ -197,7 +206,7 @@ const RootCategoriesView = ({
   onToggleProductWishlist,
 }: RootCategoriesViewProps) => {
   const insets = useSafeAreaInsets();
-  const [search, setSearch] = useState('');
+  const isSignedIn = useAuthStatus() === 'signedIn';
   const [selectedTopId, setSelectedTopId] = useState<string | null>(null);
 
   const topCategories = useMemo(
@@ -216,18 +225,11 @@ const RootCategoriesView = ({
     [topCategories, selectedTopId],
   );
 
-  const query = search.trim().toLowerCase();
-
-  const allSubCategories = useMemo(
+  const subCategories = useMemo(
     () => (selectedTopId ? allCategories.filter(category => category.parentId === selectedTopId) : []),
     [allCategories, selectedTopId],
   );
-  const hasSubCategories = allSubCategories.length > 0;
-
-  const subCategories = useMemo(
-    () => (query ? allSubCategories.filter(category => category.name.toLowerCase().includes(query)) : allSubCategories),
-    [allSubCategories, query],
-  );
+  const hasSubCategories = subCategories.length > 0;
 
   // Only a category with no sub-categories lists its products directly.
   const showsItems = !!selectedTopId && !hasSubCategories;
@@ -242,38 +244,14 @@ const RootCategoriesView = ({
     itemsQuery.refetch();
   }, [itemsQuery]);
 
-  // Pull-to-refresh: reload the category tree and, when the selected
-  // category shows products directly, its items too — silently, so the
-  // current content stays up until the fresh copy lands.
-  const refreshAll = useCallback(
-    () => Promise.all([onRefreshCategories(), showsItems ? itemsQuery.refetch() : undefined]),
-    [onRefreshCategories, showsItems, itemsQuery],
-  );
-  const {refreshing, onRefresh: handleRefresh} = useManualRefresh(refreshAll);
-
-  const displayedItems = useMemo(
-    () => (query ? items.filter(item => item.name.toLowerCase().includes(query)) : items),
-    [items, query],
-  );
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={CARD} />
 
-      <View style={[styles.searchHeader, {paddingTop: insets.top + 10}]}>
-        <View style={styles.searchPill}>
-          <MaterialCommunityIcons color={MUTED} name="magnify" size={18} />
-          <TextInput
-            onChangeText={setSearch}
-            placeholder="What are you looking for?"
-            placeholderTextColor={MUTED}
-            style={styles.searchInput}
-            value={search}
-          />
-        </View>
-        <View style={styles.bellButton}>
-          <MaterialCommunityIcons color={TEXT} name="bell-outline" size={22} />
-        </View>
+      <View style={[styles.header, {paddingTop: insets.top + 16}]}>
+        <Text style={styles.title}>Categories</Text>
+        {isSignedIn ? <NotificationBell /> : null}
       </View>
 
       {loading ? (
@@ -310,19 +288,7 @@ const RootCategoriesView = ({
 
           <ScrollView
             contentContainerStyle={styles.explorePane}
-            refreshControl={
-              // The pane is only the right column, so its own spinner would sit
-              // off-centre: it's hidden and the badge below, centred across
-              // both columns, shows instead.
-              <RefreshControl
-                colors={['transparent']}
-                onRefresh={handleRefresh}
-                progressBackgroundColor="transparent"
-                refreshing={refreshing}
-                style={styles.hiddenRefresh}
-                tintColor="transparent"
-              />
-            }
+            refreshControl={<AppRefreshControl color={GREEN} onRefresh={onRefreshCategories} />}
             showsVerticalScrollIndicator={false}
             style={styles.exploreScroll}
           >
@@ -351,11 +317,11 @@ const RootCategoriesView = ({
                   <Text style={styles.errorText}>{itemsError}</Text>
                   <ActionButton label="Retry" onPress={loadItems} style={styles.retryButton} variant="dark" />
                 </View>
-              ) : displayedItems.length === 0 ? (
+              ) : items.length === 0 ? (
                 <Text style={styles.emptySubText}>Nothing here yet.</Text>
               ) : (
                 <View style={styles.productGrid}>
-                  {displayedItems.map(item => (
+                  {items.map(item => (
                     <View key={item.id} style={styles.productCardWrapper}>
                       <ProductCard item={item} onPress={onSelectProduct} onToggleWishlist={onToggleProductWishlist} />
                     </View>
@@ -364,14 +330,6 @@ const RootCategoriesView = ({
               )}
             </View>
           </ScrollView>
-
-          {refreshing ? (
-            <View pointerEvents="none" style={styles.refreshOverlay}>
-              <View style={styles.refreshBadge}>
-                <ActivityIndicator color={GREEN} />
-              </View>
-            </View>
-          ) : null}
         </View>
       )}
     </View>
@@ -617,73 +575,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // root: search header
-  searchHeader: {
+  // root: title header
+  header: {
     alignItems: 'center',
     backgroundColor: CARD,
     borderBottomColor: BORDER,
     borderBottomWidth: 1,
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
     paddingBottom: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
   },
-  searchPill: {
-    alignItems: 'center',
-    backgroundColor: SURFACE,
-    borderColor: BORDER,
-    borderRadius: 12,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  searchInput: {
+  title: {
     color: TEXT,
-    flex: 1,
-    fontSize: 14,
-    padding: 0,
-  },
-  bellButton: {
-    alignItems: 'center',
-    backgroundColor: SURFACE,
-    borderColor: BORDER,
-    borderRadius: 12,
-    borderWidth: 1,
-    height: 42,
-    justifyContent: 'center',
-    width: 42,
+    fontSize: 26,
+    fontWeight: '800',
   },
 
   // root: body (sidebar + explore pane)
   rootBody: {
     flex: 1,
     flexDirection: 'row',
-  },
-  refreshOverlay: {
-    alignItems: 'center',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 16,
-  },
-  refreshBadge: {
-    alignItems: 'center',
-    backgroundColor: CARD,
-    borderRadius: 20,
-    elevation: 4,
-    height: 40,
-    justifyContent: 'center',
-    shadowColor: '#0F1B26',
-    shadowOffset: {height: 2, width: 0},
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    width: 40,
-  },
-  hiddenRefresh: {
-    backgroundColor: 'transparent',
   },
   sidebar: {
     backgroundColor: CARD,

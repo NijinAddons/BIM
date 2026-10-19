@@ -1,6 +1,7 @@
 import {
   callFrappeMethod,
   fetchResourceList,
+  htmlToText,
   toAbsoluteFileUrl,
 } from './frappe.client';
 
@@ -120,6 +121,12 @@ export type CategoryItem = {
   // How a kit in the cart is bought. Kept on the cart line only for now —
   // checkout doesn't send it to ERPNext yet.
   kitPlan?: KitPlan;
+  // Item "Details" section (ERPNext `custom_country_of_orgin`,
+  // `custom_fabric`), or null/unset when blank.
+  countryOfOrigin?: string | null;
+  fabric?: string | null;
+  /** Plain text — ERPNext stores the description as HTML. */
+  description?: string | null;
 };
 
 export type KitRole = 'basic' | 'week';
@@ -153,10 +160,13 @@ type ItemResponse = {
   attachments: ItemAttachment[] | null;
   brand: string | null;
   disabled?: 0 | 1 | null;
+  custom_country_of_orgin?: string | null;
   custom_delivery_fee?: number | null;
   custom_delivery_slots?: boolean | number | string | null;
+  custom_fabric?: string | null;
   custom_out_of_stock?: boolean | number | string | null;
   custom_stock_qty?: number | null;
+  description?: string | null;
   image: string | null;
   item_code: string;
   item_group: string | null;
@@ -255,6 +265,16 @@ function resolveStock(item: StockFields): number {
   return hashString(item.item_code) % 15;
 }
 
+/**
+ * Vegetables ("Vegetables", "Organic Vegetables", …) are shown under their
+ * brand, not the supplier that stocks them.
+ */
+export function isVegetableItem(
+  item: Pick<CategoryItem, 'itemGroup'>,
+): boolean {
+  return /vegetable/i.test(item.itemGroup);
+}
+
 // Whether an item is out of stock for a given supplier: the supplier's own
 // out-of-stock flag (set per supplier_options row) takes precedence, since a
 // supplier can be out while others assigned to the same item aren't. Falls
@@ -294,6 +314,12 @@ function toTruthyFlag(
   return value === true || value === 1 || value === '1' || value === 'Yes';
 }
 
+// ERPNext defaults the description to the item name — not worth showing.
+function resolveDescription(item: ItemResponse): string | null {
+  const text = item.description ? htmlToText(item.description) : null;
+  return text && text !== item.item_name ? text : null;
+}
+
 function mapItem(item: ItemResponse, fallbackGroup = ''): CategoryItem {
   const supplierLocation = resolveSupplierLocation(item);
   const supplierOptions = mapSupplierOptions(item.supplier_options);
@@ -323,43 +349,74 @@ function mapItem(item: ItemResponse, fallbackGroup = ''): CategoryItem {
     variantOf: item.variant_of?.trim() || null,
     variantAttributes: mapVariantAttributes(item.variant_attributes),
     rfqOnly: toTruthyFlag(item.custom_rfq_only),
+    countryOfOrigin: item.custom_country_of_orgin?.trim() || null,
+    fabric: item.custom_fabric?.trim() || null,
+    description: resolveDescription(item),
   };
 }
 
-// Codes of Items ticked "Published" (`custom_published`) in ERPNext.
-// `get_items` doesn't return that field, so it's looked up separately on
-// every load, so publishing/unpublishing in ERPNext shows up on the next
-// screen load. Calls within a few seconds share one request, since Home
-// loads many item groups at once.
+// Every public file attached to an Item, in upload order, primary image
+// first. `get_items` caps attachments at 2 per item to keep lists light, so
+// the product screen loads the full gallery with this.
+export async function fetchItemImages(item: CategoryItem): Promise<string[]> {
+  const files = await fetchResourceList<{ file_url: string | null }>(
+    'File',
+    {
+      fields: ['file_url'],
+      filters: [
+        ['attached_to_doctype', '=', 'Item'],
+        ['attached_to_name', '=', item.id],
+        ['is_folder', '=', 0],
+        ['is_private', '=', 0],
+      ],
+      orderBy: 'creation asc',
+      limit: 0,
+    },
+    'item images',
+  );
+  const urls = [
+    item.image,
+    ...files.map(file => toAbsoluteFileUrl(file.file_url)),
+  ].filter((url): url is string => url !== null);
+  return Array.from(new Set(urls));
+}
+
+// Items ticked "Published" (`custom_published`) in ERPNext, keyed by item
+// code, with the Details fields `get_items` doesn't return. Looked up
+// separately on every load, so publishing/unpublishing in ERPNext shows up
+// on the next screen load. Calls within a few seconds share one request,
+// since Home loads many item groups at once.
 const PUBLISHED_REUSE_MS = 5000;
-let publishedItemCodes: {
+type PublishedItemDetails = Pick<
+  ItemResponse,
+  'custom_country_of_orgin' | 'custom_fabric'
+>;
+
+let publishedItems: {
   fetchedAt: number;
-  pending: Promise<Set<string>>;
+  pending: Promise<Map<string, PublishedItemDetails>>;
 } | null = null;
 
-function getPublishedItemCodes(): Promise<Set<string>> {
+function getPublishedItems(): Promise<Map<string, PublishedItemDetails>> {
   const now = Date.now();
-  if (
-    publishedItemCodes &&
-    now - publishedItemCodes.fetchedAt < PUBLISHED_REUSE_MS
-  ) {
-    return publishedItemCodes.pending;
+  if (publishedItems && now - publishedItems.fetchedAt < PUBLISHED_REUSE_MS) {
+    return publishedItems.pending;
   }
-  const pending = fetchResourceList<{ name: string }>(
+  const pending = fetchResourceList<PublishedItemDetails & { name: string }>(
     'Item',
     {
-      fields: ['name'],
+      fields: ['name', 'custom_country_of_orgin', 'custom_fabric'],
       filters: [['custom_published', '=', 1]],
       limit: 0,
     },
     'published items',
   )
-    .then(rows => new Set(rows.map(row => row.name)))
+    .then(rows => new Map(rows.map(({ name, ...details }) => [name, details])))
     .catch(error => {
-      publishedItemCodes = null;
+      publishedItems = null;
       throw error;
     });
-  publishedItemCodes = { fetchedAt: now, pending };
+  publishedItems = { fetchedAt: now, pending };
   return pending;
 }
 
@@ -367,10 +424,11 @@ function getPublishedItemCodes(): Promise<Set<string>> {
 // Out-of-stock status is applied after mapping by forcing `stock` to 0, so
 // products stay visible and render with the card's Sold out label.
 async function onlyPublished<T extends ItemResponse>(items: T[]): Promise<T[]> {
-  const published = await getPublishedItemCodes();
-  return items.filter(
-    item => item.disabled !== 1 && published.has(item.item_code),
-  );
+  const published = await getPublishedItems();
+  return items.flatMap(item => {
+    const details = published.get(item.item_code);
+    return item.disabled !== 1 && details ? [{ ...item, ...details }] : [];
+  });
 }
 
 function fetchGroupItemResponses(itemGroup: string): Promise<ItemResponse[]> {
@@ -405,6 +463,72 @@ export async function fetchItemsByBrand(
   );
 
   return (await onlyPublished(items)).map(item => mapItem(item));
+}
+
+// High enough to cover any one category of a brand; `get_items` returns only
+// 20 items when no limit is passed.
+const BRAND_GROUP_LIMIT = '500';
+
+export type BrandCategory = {
+  name: string;
+  count: number;
+  /** A product photo from this category, for when the group has no image. */
+  image: string | null;
+};
+
+// Item Groups a brand has published products in, most products first. A
+// light Item list (two fields per row) rather than the full `get_items`
+// payload, so the Brand screen can show its categories before any products.
+export async function fetchBrandCategories(
+  brand: string,
+): Promise<BrandCategory[]> {
+  const rows = await fetchResourceList<{
+    item_group: string | null;
+    image: string | null;
+  }>(
+    'Item',
+    {
+      fields: ['item_group', 'image'],
+      filters: [
+        ['brand', '=', brand],
+        ['custom_published', '=', 1],
+        ['disabled', '=', 0],
+      ],
+      limit: 0,
+    },
+    'brand categories',
+  );
+  const counts = new Map<string, number>();
+  const images = new Map<string, string>();
+  rows.forEach(({ item_group, image }) => {
+    if (item_group) {
+      counts.set(item_group, (counts.get(item_group) ?? 0) + 1);
+      if (image && !images.has(item_group)) {
+        images.set(item_group, image);
+      }
+    }
+  });
+  return [...counts.entries()]
+    .map(([name, count]) => ({
+      name,
+      count,
+      image: toAbsoluteFileUrl(images.get(name) ?? null),
+    }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+// One category of a brand's products (the Brand screen's selected tab).
+export async function fetchItemsByBrandGroup(
+  brand: string,
+  itemGroup: string,
+): Promise<CategoryItem[]> {
+  const items = await callFrappeMethod<ItemResponse[]>(
+    'buy_in_minutes.api.get_items',
+    { brand, item_group: itemGroup, limit_page_length: BRAND_GROUP_LIMIT },
+    'brand items',
+  );
+
+  return toGroupItems(items, itemGroup);
 }
 
 // Products sold by a supplier / store. `get_items` doesn't filter by supplier
@@ -475,7 +599,7 @@ export async function fetchItemVariants(
     'variants',
   );
 
-  const published = await getPublishedItemCodes();
+  const published = await getPublishedItems();
   return variants
     .filter(variant => published.has(variant.item_code))
     .map(variant => ({

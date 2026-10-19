@@ -12,6 +12,8 @@ const SUPPLIER_SIGNUP_URL =
   'https://buyinminutes.u.frappe.cloud/become-a-supplier/new';
 const FLEET_ENROLLMENT_URL =
   'https://buyinminutes.u.frappe.cloud/Buy%20In%20Minutes/new';
+const RIDER_SIGNUP_URL =
+  'https://buyinminutes.u.frappe.cloud/Buy%20In%20Minutes/new';
 
 /** A menu row does exactly one of: open a route, open a URL, or say "coming soon". */
 export type MenuItem = ListCardItem & {
@@ -72,10 +74,10 @@ export const MENU_SECTIONS: {
       },
       {
         caption: 'Flexible shifts',
-        comingSoon: 'Become a BIM rider',
         icon: 'bicycle',
         key: 'rider',
-        label: 'Become a rider',
+        label: 'Become a BIM Rider',
+        web: { title: 'Become a BIM Rider', url: RIDER_SIGNUP_URL },
       },
     ],
   },

@@ -1,10 +1,10 @@
 import React, {useCallback} from 'react';
-import {ActivityIndicator, Dimensions, FlatList, ListRenderItemInfo, RefreshControl, StatusBar, StyleSheet, Text, View} from 'react-native';
+import {ActivityIndicator, Dimensions, FlatList, ListRenderItemInfo, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {ActionButton, ProductCard, ScreenHeader} from '../../components';
+import {ActionButton, AppRefreshControl, ProductCard, ProductFilterBar, ScreenHeader, useProductFilters} from '../../components';
 import {isWishlisted} from '../../hooks/useWishlist';
 import type {CategoriesStackScreenProps} from '../../navigation/types';
-import {useItemsByGroup, useManualRefresh} from '../../queries';
+import {useItemsByGroup} from '../../queries';
 import type {CategoryItem} from '../../services';
 
 const BRAND_NAVY = '#1F2E3D';
@@ -26,6 +26,7 @@ const CategoryItemsScreen = ({navigation, route}: Props) => {
 
   const itemsQuery = useItemsByGroup(itemGroup);
   const items = itemsQuery.data ?? EMPTY_ITEMS;
+  const filters = useProductFilters(items);
   const loading = itemsQuery.isPending && !itemsQuery.isError;
   // A failed refetch keeps showing the items we already have.
   const error =
@@ -35,9 +36,6 @@ const CategoryItemsScreen = ({navigation, route}: Props) => {
   const loadItems = useCallback(() => {
     itemsQuery.refetch();
   }, [itemsQuery]);
-
-  // Pull-to-refresh: refetch without the full-screen spinner.
-  const {refreshing, onRefresh: handleRefresh} = useManualRefresh(itemsQuery.refetch);
 
   const renderItem = useCallback(
     ({item}: ListRenderItemInfo<CategoryItem>) => (
@@ -80,11 +78,27 @@ const CategoryItemsScreen = ({navigation, route}: Props) => {
         <FlatList
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.listContent}
-          data={items}
+          data={filters.visibleItems}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
           keyExtractor={keyExtractor}
+          ListEmptyComponent={
+            <View style={styles.noMatches}>
+              <MaterialCommunityIcons color="#C6CDD3" name="magnify-close" size={40} />
+              <Text style={styles.errorText}>No products match your search.</Text>
+              <TouchableOpacity hitSlop={8} onPress={filters.clear}>
+                <Text style={styles.clearFilters}>Clear filters</Text>
+              </TouchableOpacity>
+            </View>
+          }
+          ListHeaderComponent={
+            <View style={styles.controls}>
+              <ProductFilterBar filters={filters} placeholder={`Search in ${categoryName}`} />
+            </View>
+          }
           numColumns={NUM_COLUMNS}
           refreshControl={
-            <RefreshControl colors={[ACCENT_TEAL]} onRefresh={handleRefresh} refreshing={refreshing} tintColor={ACCENT_TEAL} />
+            <AppRefreshControl onRefresh={itemsQuery.refetch} />
           }
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
@@ -119,8 +133,24 @@ const styles = StyleSheet.create({
   },
   listContent: {
     gap: GRID_GAP,
-    padding: GRID_PADDING,
     paddingBottom: 32,
+    paddingHorizontal: GRID_PADDING,
+  },
+  // The filter bar carries its own side gutter, so cancel the list's.
+  controls: {
+    marginHorizontal: -GRID_PADDING,
+    paddingTop: GRID_PADDING,
+  },
+  noMatches: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 48,
+  },
+  clearFilters: {
+    color: ACCENT_TEAL,
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 14,
   },
   row: {
     gap: GRID_GAP,

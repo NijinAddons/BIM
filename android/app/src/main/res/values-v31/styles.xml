@@ -5,7 +5,8 @@
         <item name="android:statusBarColor">@color/splash_background</item>
         <item name="android:navigationBarColor">@color/splash_background</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <!-- Blank icon: the logo's grow animation plays in SplashScreen.tsx. -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon_blank</item>
     </style>
 
 </resources>

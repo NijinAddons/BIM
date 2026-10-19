@@ -3,14 +3,15 @@ import {
   type BottomTabBarButtonProps,
 } from '@react-navigation/bottom-tabs';
 import React from 'react';
-import {Pressable} from 'react-native';
+import {Platform, Pressable, StyleSheet} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import {useCartCount} from '../hooks/useCart';
 import CartScreen from '../screens/cart/CartScreen';
 import {
-  BORDER,
-  CARD,
+  HAIRLINE,
+  TAB_BAR,
   GREEN as ACTION_GREEN,
   TEXT_VARIANT as INACTIVE_TINT,
 } from '../theme/colors';
@@ -28,12 +29,15 @@ const TAB_ICONS: Record<keyof MainTabParamList, {active: string; inactive: strin
   Profile: {active: 'account-circle', inactive: 'account-circle-outline'},
 };
 
+const TAB_BAR_HEIGHT = 44;
+
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 // Plain Pressable in place of the default button, so tapping a tab shows no
-// Android ripple or iOS opacity flash.
-const tabBarButton = ({ref: _ref, ...props}: BottomTabBarButtonProps) => (
-  <Pressable {...props} android_ripple={null} />
+// Android ripple or iOS opacity flash. Content is centred vertically — the
+// default top-aligns it, which leaves label-less tabs sitting high.
+const tabBarButton = ({ref: _ref, style, ...props}: BottomTabBarButtonProps) => (
+  <Pressable {...props} android_ripple={null} style={[style, styles.tabButton]} />
 );
 
 const tabIcon =
@@ -47,6 +51,14 @@ const tabIcon =
 
 export default function MainTabNavigator() {
   const cartCount = useCartCount();
+  const insets = useSafeAreaInsets();
+  // On iOS the bar grows by half the home-indicator inset and centres its icons
+  // across the full height (no bottom padding) — the icons still end well above
+  // the indicator. Android reserves the full inset so tabs never overlap the
+  // system nav buttons.
+  const isIOS = Platform.OS === 'ios';
+  const barHeight = TAB_BAR_HEIGHT + (isIOS ? insets.bottom / 2 : insets.bottom);
+  const bottomPadding = isIOS ? 0 : insets.bottom;
 
   return (
     <Tab.Navigator
@@ -54,8 +66,15 @@ export default function MainTabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: ACTION_GREEN,
         tabBarInactiveTintColor: INACTIVE_TINT,
-        tabBarLabelStyle: {fontSize: 11, fontWeight: '700'},
-        tabBarStyle: {backgroundColor: CARD, borderTopColor: BORDER},
+        tabBarLabelStyle: styles.label,
+        tabBarStyle: {
+          backgroundColor: TAB_BAR,
+          borderTopColor: HAIRLINE,
+          borderTopWidth: 1,
+          // Shorter than the 49pt default.
+          height: barHeight,
+          paddingBottom: bottomPadding,
+        },
         tabBarIcon: tabIcon(route.name),
         tabBarButton,
       })}>
@@ -80,3 +99,7 @@ export default function MainTabNavigator() {
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  label: {fontSize: 11, fontWeight: '700'},
+  tabButton: {justifyContent: 'center'},});

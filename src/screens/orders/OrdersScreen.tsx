@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
-  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -12,14 +11,19 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
-import { ActionButton } from '../../components';
+import {
+  ActionButton,
+  AppRefreshControl,
+  NotificationBell,
+} from '../../components';
 import { useAuthStatus, useAuthUser } from '../../hooks/useAuth';
 import type { OrdersStackScreenProps } from '../../navigation/types';
-import { useManualRefresh, useOrdersForUser } from '../../queries';
+import { useOrdersForUser } from '../../queries';
 import type {
   QuotationRequestSummary,
   SalesOrderSummary,
 } from '../../services';
+import { TEXT } from '../../theme/colors';
 import { QUOTATION_STYLE, STATUS_STYLES } from './orders.data';
 
 const BRAND_NAVY = '#1F2E3D';
@@ -227,12 +231,19 @@ const OrdersScreen = ({ navigation }: Props) => {
   const load = useCallback(() => {
     refetch();
   }, [refetch]);
-  const { refreshing, onRefresh } = useManualRefresh(refetch);
+
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+      <Text style={styles.title}>My Orders</Text>
+      {isSignedIn ? <NotificationBell /> : null}
+    </View>
+  );
 
   if (!isSignedIn) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+        {header}
         <View style={styles.guestState}>
           <View style={styles.guestArt}>
             <View style={styles.guestArtRing}>
@@ -279,8 +290,9 @@ const OrdersScreen = ({ navigation }: Props) => {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      {header}
 
       {loading ? (
         <View style={styles.centeredState}>
@@ -296,11 +308,7 @@ const OrdersScreen = ({ navigation }: Props) => {
           data={entries}
           keyExtractor={entryKey}
           refreshControl={
-            <RefreshControl
-              onRefresh={onRefresh}
-              refreshing={refreshing}
-              tintColor={ACCENT_TEAL}
-            />
+            <AppRefreshControl onRefresh={refetch} />
           }
           renderItem={({ item }) =>
             item.kind === 'quotation' ? (
@@ -357,10 +365,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     flex: 1,
   },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+  },
+  title: {
+    color: TEXT,
+    fontSize: 26,
+    fontWeight: '800',
+  },
   listContent: {
     gap: 14,
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingTop: 8,
   },
   listContentEmpty: {
     flexGrow: 1,

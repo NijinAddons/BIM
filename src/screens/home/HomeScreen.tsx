@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   AppState,
   FlatList,
@@ -7,7 +8,6 @@ import {
   ListRenderItemInfo,
   Platform,
   Pressable,
-  RefreshControl,
   StatusBar,
   StyleSheet,
   Text,
@@ -23,14 +23,16 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import { bim } from '../../assets/images';
 import {
   AddressMapPicker,
+  AppRefreshControl,
   BannerCarousel,
+  CartBar,
   LocationPermissionSheet,
   ProductCard,
   WeeklyKitsBanner,
   WeeklyKitsSection,
   type LocationPermissionVariant,
 } from '../../components';
-import { useCart, useCartCount, useCartSubtotal } from '../../hooks/useCart';
+import { useCartCount } from '../../hooks/useCart';
 import {
   isManualLocation,
   loadCurrentLocation,
@@ -48,7 +50,6 @@ import {
   homeFeedQuery,
   queryKeys,
   useItemsByGroup,
-  useManualRefresh,
   useProductBundles,
 } from '../../queries';
 import { Brand, CategoryItem, ProductBundle, Store } from '../../services';
@@ -88,9 +89,6 @@ type Section =
   | { kind: 'quickCategories' }
   | { kind: 'rail'; groupId: string; name: string };
 
-const formatPrice = (value: number) =>
-  Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, '');
-
 const toPlaceName = (value: string) =>
   value
     .replace(/\d+/g, '')
@@ -123,12 +121,15 @@ const HomeScreen = ({ navigation }: Props) => {
   const location = useLocation();
 
   const headerPlace = useMemo(() => {
-    if (!location.label) {
+    // Only a location resolved this session (GPS fix after permission was
+    // granted, or an address the user picked) goes in the header — the label
+    // saved last session may be somewhere else entirely.
+    if (!location.label || location.status !== 'ready') {
       return null;
     }
     const cleaned = toPlaceName(location.label);
     return cleaned.length > 0 ? truncatePlaceName(cleaned) : null;
-  }, [location.label]);
+  }, [location.label, location.status]);
 
   const [mapPickerOpen, setMapPickerOpen] = useState(false);
   // Filled in by the splash screen's preload when it finished in time, so
@@ -178,7 +179,6 @@ const HomeScreen = ({ navigation }: Props) => {
       ]),
     [feedQuery, queryClient],
   );
-  const { refreshing, onRefresh } = useManualRefresh(refreshFeed);
 
   const [locationSheet, setLocationSheet] = useState<{
     visible: boolean;
@@ -193,6 +193,10 @@ const HomeScreen = ({ navigation }: Props) => {
     setLocationSheet(current => ({ ...current, visible: false }));
   }, []);
 
+  // Set when this screen itself records a permission outcome, so the
+  // auto-prompt effect below doesn't pop the sheet straight back up.
+  const promptedLocationStatusRef = useRef<typeof location.status | null>(null);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -205,10 +209,14 @@ const HomeScreen = ({ navigation }: Props) => {
         if (cancelled) {
           return;
         }
-        if (!granted && !primed) {
-          // First time ever asking on this device — show the friendly
-          // rationale sheet before the bare OS permission dialog.
-          showLocationSheet('ask');
+        if (!granted) {
+          // No permission, no fetch: the header stays on "Location access
+          // off" until the user allows it from the sheet. The sheet pops up
+          // by itself only the first time; after that it's a header tap.
+          if (primed) {
+            promptedLocationStatusRef.current = 'denied';
+          }
+          setLocationStatus('denied');
           return;
         }
       }
@@ -245,10 +253,6 @@ const HomeScreen = ({ navigation }: Props) => {
       subscription.remove();
     };
   }, [showLocationSheet]);
-
-  // Set when this screen itself records a permission outcome, so the
-  // auto-prompt effect below doesn't pop the sheet straight back up.
-  const promptedLocationStatusRef = useRef<typeof location.status | null>(null);
 
   // "Allow Location Access": the OS permission dialog is the only way to
   // get the permission, so that one native dialog is unavoidable. Once
@@ -519,10 +523,7 @@ const HomeScreen = ({ navigation }: Props) => {
     ],
   );
 
-  const cartLines = useCart();
   const cartCount = useCartCount();
-  const cartSubtotal = useCartSubtotal();
-  const cartBarImage = cartLines[0]?.item.image ?? null;
 
   const trendingGroups = useMemo(
     () => groups.slice(0, MAX_TRENDING_CHIPS),
@@ -553,21 +554,28 @@ const HomeScreen = ({ navigation }: Props) => {
                 size={14}
               />
             </View>
-            <Text
-              adjustsFontSizeToFit
-              minimumFontScale={0.75}
-              numberOfLines={1}
-              style={styles.locationText}
-            >
-              {headerPlace ??
-                (location.status === 'loading'
-                  ? 'Locating…'
-                  : location.status === 'denied' || location.status === 'blocked'
-                  ? 'Location access off'
-                  : location.status === 'servicesOff'
-                  ? 'Turn on location'
-                  : 'Set your location')}
-            </Text>
+            {!headerPlace &&
+            (location.status === 'loading' || location.status === 'idle') ? (
+              <ActivityIndicator
+                color="#FFFFFF"
+                size="small"
+                style={styles.locationLoader}
+              />
+            ) : (
+              <Text
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+                numberOfLines={1}
+                style={styles.locationText}
+              >
+                {headerPlace ??
+                  (location.status === 'denied' || location.status === 'blocked'
+                    ? 'Location access off'
+                    : location.status === 'servicesOff'
+                    ? 'Turn on location'
+                    : 'Set your location')}
+              </Text>
+            )}
             <MaterialCommunityIcons
               color="#FFFFFF"
               name="chevron-down"
@@ -601,12 +609,6 @@ const HomeScreen = ({ navigation }: Props) => {
             Search for groceries, garments & more
           </Text>
           <View style={styles.searchIcons}>
-            <MaterialCommunityIcons
-              color={MUTED}
-              name="microphone-outline"
-              size={18}
-            />
-            <View style={styles.searchIconDivider} />
             <MaterialCommunityIcons color={MUTED} name="tune-variant" size={18} />
           </View>
         </Pressable>
@@ -644,12 +646,7 @@ const HomeScreen = ({ navigation }: Props) => {
           )
         }
         refreshControl={
-          <RefreshControl
-            colors={[TEAL]}
-            onRefresh={onRefresh}
-            refreshing={refreshing}
-            tintColor={TEAL}
-          />
+          <AppRefreshControl color={TEAL} onRefresh={refreshFeed} />
         }
         removeClippedSubviews
         renderItem={renderSection}
@@ -657,40 +654,7 @@ const HomeScreen = ({ navigation }: Props) => {
         windowSize={7}
       />
 
-      {cartCount > 0 ? (
-        <View style={styles.cartBar}>
-          <View style={styles.cartBarIcon}>
-            {cartBarImage ? (
-              <FastImage
-                resizeMode={FastImage.resizeMode.cover}
-                source={{uri: cartBarImage}}
-                style={styles.cartBarImage}
-              />
-            ) : (
-              <MaterialCommunityIcons color="#FFFFFF" name="shopping" size={18} />
-            )}
-          </View>
-          <View style={styles.cartBarInfo}>
-            <Text numberOfLines={1} style={styles.cartBarCount}>
-              {cartCount} {cartCount === 1 ? 'item' : 'items'} · AED{' '}
-              {formatPrice(cartSubtotal)}
-            </Text>
-            <Text style={styles.cartBarHint}>plus taxes</Text>
-          </View>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={openCart}
-            style={styles.cartBarButton}
-          >
-            <Text style={styles.cartBarButtonText}>View Cart</Text>
-            <MaterialCommunityIcons
-              color="#FFFFFF"
-              name="arrow-right"
-              size={16}
-            />
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <CartBar onPress={openCart} />
 
       <AddressMapPicker
         onClose={() => setMapPickerOpen(false)}
@@ -1189,6 +1153,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 24,
   },
+  locationLoader: {
+    marginHorizontal: 4,
+  },
   locationText: {
     color: '#FFFFFF',
     flexShrink: 1,
@@ -1243,11 +1210,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 8,
-  },
-  searchIconDivider: {
-    backgroundColor: HAIRLINE,
-    height: 16,
-    width: 1,
   },
   trendingRow: {
     alignItems: 'center',
@@ -1467,64 +1429,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 8,
     textAlign: 'center',
-  },
-  cartBar: {
-    ...softShadow,
-    alignItems: 'center',
-    bottom: 10,
-    backgroundColor: GREEN,
-    borderRadius: 999,
-    elevation: 6,
-    flexDirection: 'row',
-    left: 40,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    position: 'absolute',
-    right: 40,
-    shadowOpacity: 0.18,
-  },
-  cartBarIcon: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderRadius: 999,
-    height: 32,
-    justifyContent: 'center',
-    overflow: 'hidden',
-    width: 32,
-  },
-  cartBarImage: {
-    height: '100%',
-    width: '100%',
-  },
-  cartBarInfo: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  cartBarCount: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  cartBarHint: {
-    color: 'rgba(255,255,255,0.75)',
-    fontSize: 11,
-    fontWeight: '500',
-    marginTop: 1,
-  },
-  cartBarButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 4,
-    marginLeft: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  cartBarButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
   },
 });
 

@@ -271,6 +271,10 @@ function haversineMeters(a: Coords, b: Coords): number {
 // device fix — otherwise it's a different building on the same block.
 const NEAREST_PLACE_MAX_METERS = 40;
 
+// Below this, a precise fix can't land on a different building than the fast
+// one did, so the extra reverse-geocode is skipped.
+const REFINE_MIN_METERS = 10;
+
 // Ask Places (not Geocoding) what's actually at this exact point. Google
 // recommends Nearby Search for "what business/building is here" — the
 // Geocoding API's premise/POI match can snap to a neighboring address on
@@ -611,13 +615,21 @@ export async function resolveCurrentLocation(
   if (onRefine) {
     getCurrentCoords()
       .then(async preciseCoords => {
-        if (haversineMeters(coords, preciseCoords) < 50) {
+        // The fast fix can be ~100m+ off, and the building is matched within
+        // NEAREST_PLACE_MAX_METERS of it — so even a small correction can
+        // mean a different building. Re-geocode unless the fix barely moved,
+        // and apply it whenever the resulting address actually differs.
+        if (haversineMeters(coords, preciseCoords) < REFINE_MIN_METERS) {
           return;
         }
         const preciseGeocoded = await reverseGeocode(preciseCoords).catch(
           () => null,
         );
-        if (preciseGeocoded) {
+        if (
+          preciseGeocoded &&
+          (preciseGeocoded.label !== geocoded.label ||
+            preciseGeocoded.address !== geocoded.address)
+        ) {
           onRefine({coords: preciseCoords, ...preciseGeocoded});
         }
       })

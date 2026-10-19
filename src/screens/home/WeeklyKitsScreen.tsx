@@ -4,7 +4,6 @@ import {
   Alert,
   Linking,
   Pressable,
-  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -17,13 +16,15 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 
 import {
   ActionButton,
+  AppRefreshControl,
   KitImage,
+  KitItemSheet,
   ScreenHeader,
   nextSaturdayKitId,
 } from '../../components';
 import { setCartQty, useCart } from '../../hooks/useCart';
 import type { RootStackScreenProps } from '../../navigation/types';
-import { useManualRefresh, useProductBundles } from '../../queries';
+import { useProductBundles } from '../../queries';
 import {
   formatComponentQty,
   formatKg,
@@ -50,7 +51,7 @@ const BRAND_NAVY = '#1F2E3D';
 const KIT_GREEN = '#1F5F25';
 const KIT_BUTTON = '#2E7D32';
 const KIT_SELECTED_BG = '#EEF7E9';
-const KIT_PAGE_BG = '#F2F3F7';
+const KIT_PAGE_BG = '#FFFFFF';
 const LINK_BLUE = '#0B63C5';
 const ERROR = '#C62828';
 // TODO: confirm the published Terms & Conditions page.
@@ -74,9 +75,19 @@ const formatDayTime = (date: Date) => {
   return `${formatDay(date)}, ${hours}:${minutes} ${period}`;
 };
 
-function ComponentTile({ component }: { component: BundleComponent }) {
+type ComponentTileProps = {
+  component: BundleComponent;
+  onPress: (component: BundleComponent) => void;
+};
+
+function ComponentTile({ component, onPress }: ComponentTileProps) {
   return (
-    <View style={styles.componentTile}>
+    <Pressable
+      accessibilityLabel={`${component.name} details`}
+      accessibilityRole="button"
+      onPress={() => onPress(component)}
+      style={({ pressed }) => [styles.componentTile, pressed ? styles.componentTilePressed : null]}
+    >
       <View style={styles.componentImage}>
         {component.image ? (
           <FastImage
@@ -94,7 +105,7 @@ function ComponentTile({ component }: { component: BundleComponent }) {
       <Text numberOfLines={1} style={styles.componentQty}>
         {formatComponentQty(component.qty, component.uom)}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -132,6 +143,8 @@ type KitCardProps = {
   selected?: boolean;
   /** Omitted for the basic kit, which is always included and not tappable. */
   onToggle?: (bundle: ProductBundle) => void;
+  /** Tapping an item inside the kit opens its details. */
+  onComponentPress: (component: BundleComponent, bundle: ProductBundle) => void;
 };
 
 function KitCard({
@@ -140,6 +153,7 @@ function KitCard({
   locked = false,
   selected = false,
   onToggle,
+  onComponentPress,
 }: KitCardProps) {
   const isBasic = bundle.role === 'basic';
   return (
@@ -170,6 +184,12 @@ function KitCard({
           {bundle.weightKg !== null ? (
             <Text style={styles.kitWeight}>
               {formatKg(bundle.weightKg)} / Week
+            </Text>
+          ) : null}
+          {/* A kit without a selling price comes back as 0; hide it. */}
+          {bundle.item.price > 0 ? (
+            <Text style={styles.kitPrice}>
+              AED {bundle.item.price.toFixed(2)} / week
             </Text>
           ) : null}
         </View>
@@ -212,7 +232,11 @@ function KitCard({
             showsHorizontalScrollIndicator={false}
           >
             {bundle.components.map(component => (
-              <ComponentTile component={component} key={component.itemCode} />
+              <ComponentTile
+                component={component}
+                key={component.itemCode}
+                onPress={tapped => onComponentPress(tapped, bundle)}
+              />
             ))}
           </ScrollView>
         </>
@@ -244,7 +268,6 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
     () => bundles.filter(bundle => bundle.role === 'week'),
     [bundles],
   );
-  const { refreshing, onRefresh } = useManualRefresh(bundlesQuery.refetch);
   // Only the kit for the next open Saturday can be picked; it closes at the
   // Friday cutoff and the following week's kit opens.
   const nextId = nextSaturdayKitId(bundles);
@@ -289,6 +312,17 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
   );
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [termsError, setTermsError] = useState(false);
+
+  const [openItem, setOpenItem] = useState<{
+    component: BundleComponent;
+    kitLabel: string;
+  } | null>(null);
+  const openComponent = useCallback(
+    (component: BundleComponent, bundle: ProductBundle) =>
+      setOpenItem({ component, kitLabel: bundle.label }),
+    [],
+  );
+  const closeComponent = useCallback(() => setOpenItem(null), []);
 
   const scrollRef = useRef<ScrollView>(null);
   const summaryY = useRef(0);
@@ -399,7 +433,7 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
         {basic ? (
           <>
             <Text style={styles.groupLabel}>Basic kit · same every week</Text>
-            <KitCard bundle={basic} />
+            <KitCard bundle={basic} onComponentPress={openComponent} />
           </>
         ) : null}
 
@@ -424,6 +458,7 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
                 isNext={week.item.id === nextId}
                 key={week.item.id}
                 locked={week.item.id !== nextId}
+                onComponentPress={openComponent}
                 onToggle={toggleWeek}
                 selected={weekIds.includes(week.item.id)}
               />
@@ -521,12 +556,7 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.scrollContent}
         ref={scrollRef}
         refreshControl={
-          <RefreshControl
-            colors={[GREEN]}
-            onRefresh={onRefresh}
-            refreshing={refreshing}
-            tintColor={GREEN}
-          />
+          <AppRefreshControl color={GREEN} onRefresh={bundlesQuery.refetch} />
         }
         showsVerticalScrollIndicator={false}
       >
@@ -561,6 +591,12 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
           />
         </View>
       ) : null}
+
+      <KitItemSheet
+        component={openItem?.component ?? null}
+        kitLabel={openItem?.kitLabel}
+        onClose={closeComponent}
+      />
     </View>
   );
 }
@@ -591,7 +627,7 @@ const styles = StyleSheet.create({
   },
   kitCard: {
     backgroundColor: CARD,
-    borderColor: 'transparent',
+    borderColor: BORDER,
     borderRadius: 12,
     borderWidth: 1.5,
     elevation: 2,
@@ -669,6 +705,9 @@ const styles = StyleSheet.create({
   componentTile: {
     width: 64,
   },
+  componentTilePressed: {
+    opacity: 0.6,
+  },
   componentImage: {
     alignItems: 'center',
     backgroundColor: SURFACE,
@@ -698,6 +737,11 @@ const styles = StyleSheet.create({
     color: KIT_GREEN,
     fontSize: 14,
     fontWeight: '800',
+  },
+  kitPrice: {
+    color: TEXT,
+    fontSize: 15,
+    fontWeight: '900',
   },
   selectButton: {
     alignItems: 'center',

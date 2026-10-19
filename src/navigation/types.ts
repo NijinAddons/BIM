@@ -29,9 +29,12 @@ import type {
  *   ├─ ProductDetail   (shared — reachable from any tab / deep link)
  *   ├─ WeeklyKits      (shared — pick a weekly kit, opened from Home)
  *   ├─ BrandDetail     (shared)
+ *   ├─ BrandCategoryItems (a brand's products in one category)
  *   ├─ StoreDetail     (shared)
  *   ├─ Wishlist        (shared)
  *   ├─ Search          (shared — Home's search bar)
+ *   ├─ Checkout        (Stripe payment page, opened from Cart; going back
+ *   │                   returns to Cart)
  *   └─ Login / Otp / ProfileDetails (sign-in flow, pushed on demand —
  *      e.g. from Cart's "Login to proceed" — the app is otherwise
  *      browsable as a guest; see `useAuthStatus` in `hooks/useAuth`)
@@ -52,10 +55,16 @@ export type OrdersStackParamList = {
   QuotationDetails: { requestId: string; summary?: QuotationRequestSummary };
 };
 
+export type WebViewParams = {
+  title: string;
+  url: string;
+  paymentCheckout?: boolean;
+};
+
 export type ProfileStackParamList = {
   ProfileHome: undefined;
   SavedAddresses: undefined;
-  WebView: { title: string; url: string; paymentCheckout?: boolean };
+  WebView: WebViewParams;
 };
 
 export type MainTabParamList = {
@@ -72,9 +81,11 @@ export type RootStackParamList = {
   ProductDetail: { item: CategoryItem };
   WeeklyKits: { kitId?: string } | undefined;
   BrandDetail: { brand: Brand };
+  BrandCategoryItems: { brand: Brand; itemGroup: string };
   StoreDetail: { store: Store };
   Wishlist: undefined;
   Search: undefined;
+  Checkout: WebViewParams;
   Login: undefined;
   Otp: { phone?: string; authFlowToken?: string } | undefined;
   ProfileDetails:

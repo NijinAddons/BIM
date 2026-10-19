@@ -9,3 +9,4 @@ export const HAIRLINE = '#C4C6CC';
 export const TEXT = '#191C1D';
 export const TEXT_VARIANT = '#44474C';
 export const MUTED = '#74777D';
+export const TAB_BAR = '#F1F3F4';

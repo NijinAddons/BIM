@@ -99,9 +99,11 @@ export default function ActionButton({
             size="small"
           />
         ) : null}
-        <Text numberOfLines={1} style={[styles.text, resolvedVariant.text, textStyle]}>
-          {label}
-        </Text>
+        {label ? (
+          <Text numberOfLines={1} style={[styles.text, resolvedVariant.text, textStyle]}>
+            {label}
+          </Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );

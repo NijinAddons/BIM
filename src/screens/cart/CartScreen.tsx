@@ -19,6 +19,7 @@ import {
   ActionButton,
   CustomAlert,
   LocationSheet,
+  NotificationBell,
   nextSaturdayKitId,
 } from '../../components';
 import { useAuthStatus, useAuthUser } from '../../hooks/useAuth';
@@ -174,7 +175,11 @@ const CartRow = ({
         <Text style={styles.rowUnit}>AED {item.price.toFixed(2)} each</Text>
         {item.kitRole ? (
           <View style={styles.rowMetaRow}>
-            <MaterialCommunityIcons color={MUTED} name="calendar-sync" size={12} />
+            <MaterialCommunityIcons
+              color={MUTED}
+              name="calendar-sync"
+              size={12}
+            />
             <Text style={styles.rowMetaText}>
               {item.kitPlan === 'monthly'
                 ? 'Monthly auto-renew · every Saturday'
@@ -263,8 +268,7 @@ const CartScreen = ({ navigation }: Props) => {
   const bundles = useProductBundles().data;
   const topCategories = (useCategories().data ?? [])
     .filter(
-      category =>
-        category.parentId === TOP_LEVEL_PARENT && category.published,
+      category => category.parentId === TOP_LEVEL_PARENT && category.published,
     )
     .slice(0, MAX_EMPTY_CATEGORY_CHIPS);
   const openCategory = (category: Category) =>
@@ -401,8 +405,9 @@ const CartScreen = ({ navigation }: Props) => {
       <View style={[styles.container, styles.emptyContainer]}>
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-        <View style={[styles.emptyHeader, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.emptyHeaderTitle}>My Cart</Text>
+        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+          <Text style={styles.headerTitle}>My Cart</Text>
+          {isSignedIn ? <NotificationBell /> : null}
         </View>
 
         <ScrollView
@@ -437,7 +442,11 @@ const CartScreen = ({ navigation }: Props) => {
             onPress={() => navigation.navigate('Wishlist')}
             style={styles.secondaryCta}
           >
-            <MaterialCommunityIcons color={INK} name="heart-outline" size={20} />
+            <MaterialCommunityIcons
+              color={INK}
+              name="heart-outline"
+              size={20}
+            />
             <Text style={styles.secondaryCtaText}>View my wishlist</Text>
           </TouchableOpacity>
 
@@ -510,7 +519,7 @@ const CartScreen = ({ navigation }: Props) => {
     );
     Alert.alert(
       'Kit ordering closed',
-      'Orders for that week\'s kit closed at 5 PM on Friday, so it was removed from your cart. You can pick the kit for the next Saturday from Weekly Kits.',
+      "Orders for that week's kit closed at 5 PM on Friday, so it was removed from your cart. You can pick the kit for the next Saturday from Weekly Kits.",
     );
     return true;
   };
@@ -666,13 +675,11 @@ const CartScreen = ({ navigation }: Props) => {
         throw new Error('Payment setup did not return a checkout URL.');
       }
 
-      navigation.navigate('Profile', {
-        screen: 'WebView',
-        params: {
-          paymentCheckout: true,
-          title: 'Checkout',
-          url: session.checkout_url,
-        },
+      // A root-stack screen, so leaving it lands back on the Cart tab.
+      navigation.navigate('Checkout', {
+        paymentCheckout: true,
+        title: 'Checkout',
+        url: session.checkout_url,
       });
     } catch (error) {
       console.log(
@@ -701,7 +708,10 @@ const CartScreen = ({ navigation }: Props) => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      <View style={{ paddingTop: insets.top + 8 }} />
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+        <Text style={styles.headerTitle}>My Cart</Text>
+        {isSignedIn ? <NotificationBell /> : null}
+      </View>
 
       <FlatList
         contentContainerStyle={styles.listContent}
@@ -1240,7 +1250,7 @@ const CartScreen = ({ navigation }: Props) => {
             />
             <ActionButton
               disabled={isStartingPayment}
-              label={isStartingPayment ? 'Starting payment...' : 'Pay now'}
+              label={isStartingPayment ? '' : 'Pay now'}
               loading={isStartingPayment}
               onPress={onPayNow}
               style={styles.paymentOptionButton}
@@ -1298,11 +1308,14 @@ const styles = StyleSheet.create({
   emptyContainer: {
     backgroundColor: '#ffffff',
   },
-  emptyHeader: {
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     paddingBottom: 12,
     paddingHorizontal: 20,
   },
-  emptyHeaderTitle: {
+  headerTitle: {
     color: INK,
     fontSize: 26,
     fontWeight: '800',
@@ -1398,6 +1411,7 @@ const styles = StyleSheet.create({
   listContent: {
     gap: 12,
     padding: 16,
+    paddingTop: 8,
   },
   row: {
     alignItems: 'center',

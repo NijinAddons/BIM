@@ -6,11 +6,13 @@ import LoginScreen from '../screens/auth/LoginScreen';
 import OtpScreen from '../screens/auth/OtpScreen';
 import ProfileDetailsScreen from '../screens/auth/ProfileDetailsScreen';
 import SplashScreen from '../screens/auth/SplashScreen';
+import BrandCategoryItemsScreen from '../screens/home/BrandCategoryItemsScreen';
 import BrandScreen from '../screens/home/BrandScreen';
 import WeeklyKitsScreen from '../screens/home/WeeklyKitsScreen';
 import ProductDetailScreen from '../screens/home/ProductDetailScreen';
 import StoreScreen from '../screens/home/StoreScreen';
 import SearchScreen from '../screens/search/SearchScreen';
+import WebViewScreen from '../screens/profile/WebViewScreen';
 import WishlistScreen from '../screens/wishlist/WishlistScreen';
 import MainTabNavigator from './MainTabNavigator';
 import { APP_BACKGROUND } from './constants';
@@ -107,9 +109,14 @@ export default function MainNavigator() {
       <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
       <Stack.Screen name="WeeklyKits" component={WeeklyKitsScreen} />
       <Stack.Screen name="BrandDetail" component={BrandScreen} />
+      <Stack.Screen
+        name="BrandCategoryItems"
+        component={BrandCategoryItemsScreen}
+      />
       <Stack.Screen name="StoreDetail" component={StoreScreen} />
       <Stack.Screen name="Wishlist" component={WishlistScreen} />
       <Stack.Screen name="Search" component={SearchScreen} />
+      <Stack.Screen name="Checkout" component={WebViewScreen} />
       <Stack.Screen
         name="Login"
         component={LoginRoute}

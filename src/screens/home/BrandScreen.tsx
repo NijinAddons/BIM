@@ -27,18 +27,31 @@ import type {
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { bim } from '../../assets/images';
-import { ActionButton, ProductCard, ScreenHeader } from '../../components';
+import {
+  ActionButton,
+  AppRefreshControl,
+  ScreenHeader,
+  WeeklyKitsSection,
+} from '../../components';
 import { useDeliveryEstimate } from '../../hooks/useDeliveryEstimate';
-import { isWishlisted } from '../../hooks/useWishlist';
 import type { RootStackScreenProps } from '../../navigation/types';
-import { useItemsByBrand, useSupplierReviews } from '../../queries';
+import {
+  useBrandCategories,
+  useCategories,
+  useItemsByBrandGroup,
+  useProductBundles,
+  useSupplierReviews,
+} from '../../queries';
 import {
   CategoryItem,
+  type BrandCategory,
+  type ProductBundle,
   type SupplierReview,
   type SupplierReviewSummary,
 } from '../../services';
 
 const EMPTY_ITEMS: CategoryItem[] = [];
+const EMPTY_BUNDLES: ProductBundle[] = [];
 
 const BRAND_NAVY = '#1F2E3D';
 const ACCENT_TEAL = '#2ECFC0';
@@ -49,9 +62,13 @@ const NUM_COLUMNS = 2;
 const GRID_PADDING = 16;
 const GRID_GAP = 14;
 const DESC_COLLAPSED_LINES = 3;
-const BANNER_HEIGHT = 132;
-const BANNER_AUTOSCROLL_MS = 4000;
 const SCREEN_WIDTH = Dimensions.get('window').width;
+const BANNER_HEIGHT = 132;
+// The banner takes its height from the first image's aspect ratio, kept
+// within these bounds so an odd upload can't squash or swamp the screen.
+const BANNER_MIN_HEIGHT = 100;
+const BANNER_MAX_HEIGHT = Math.round(SCREEN_WIDTH * 0.75);
+const BANNER_AUTOSCROLL_MS = 4000;
 const LOGO_SIZE = 84;
 const CARD_WIDTH =
   (Dimensions.get('window').width -
@@ -59,7 +76,7 @@ const CARD_WIDTH =
     GRID_GAP * (NUM_COLUMNS - 1)) /
   NUM_COLUMNS;
 
-const keyExtractor = (item: CategoryItem) => item.id;
+const keyExtractor = (category: BrandCategory) => category.name;
 
 const REVIEWS_PREVIEW = 0;
 
@@ -100,6 +117,8 @@ const BrandBanner = React.memo(function BrandBannerCarousel({
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
   const [preview, setPreview] = useState<string | null>(null);
+  // Height / width of the first banner, once it has loaded.
+  const [aspect, setAspect] = useState<number | null>(null);
 
   const slides = useMemo(() => banners.filter(Boolean), [banners]);
   const count = slides.length;
@@ -121,11 +140,16 @@ const BrandBanner = React.memo(function BrandBannerCarousel({
     return () => clearInterval(timer);
   }, [count, preview]);
 
+  const height = aspect
+    ? Math.min(
+        BANNER_MAX_HEIGHT,
+        Math.max(BANNER_MIN_HEIGHT, Math.round(SCREEN_WIDTH * aspect)),
+      )
+    : BANNER_HEIGHT;
+
   const onMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const next = Math.round(
-        event.nativeEvent.contentOffset.x / SCREEN_WIDTH,
-      );
+      const next = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
       indexRef.current = next;
       setIndex(next);
     },
@@ -138,14 +162,22 @@ const BrandBanner = React.memo(function BrandBannerCarousel({
         activeOpacity={0.9}
         disabled={!!failed[slideIndex]}
         onPress={() => setPreview(uri)}
-        style={styles.bannerSlide}
+        style={[styles.bannerSlide, { height }]}
       >
         {failed[slideIndex] ? (
           <View style={styles.bannerFallback} />
         ) : (
           <FastImage
-            onError={() =>
-              setFailed(prev => ({ ...prev, [slideIndex]: true }))
+            onError={() => setFailed(prev => ({ ...prev, [slideIndex]: true }))}
+            onLoad={
+              slideIndex === 0
+                ? event => {
+                    const { width, height: imageHeight } = event.nativeEvent;
+                    if (width > 0 && imageHeight > 0) {
+                      setAspect(imageHeight / width);
+                    }
+                  }
+                : undefined
             }
             resizeMode={FastImage.resizeMode.contain}
             source={{ uri }}
@@ -154,7 +186,7 @@ const BrandBanner = React.memo(function BrandBannerCarousel({
         )}
       </TouchableOpacity>
     ),
-    [failed],
+    [failed, height],
   );
 
   if (count === 0) {
@@ -167,7 +199,7 @@ const BrandBanner = React.memo(function BrandBannerCarousel({
   }
 
   return (
-    <View style={styles.bannerWrap}>
+    <View style={[styles.bannerWrap, { height }]}>
       <FlatList
         ref={listRef}
         data={slides}
@@ -253,28 +285,133 @@ const ReviewCard = React.memo(function ReviewCardRow({
 
 type Props = RootStackScreenProps<'BrandDetail'>;
 
+const EMPTY_CATEGORIES: BrandCategory[] = [];
+
+/**
+ * One of the brand's categories; opens its products. Shows the category's
+ * own image, falling back to one of its product photos when the category has
+ * none or it fails to load (e.g. uploaded as a private file).
+ */
+const BrandCategoryCard = React.memo(function BrandCategoryCardTile({
+  category,
+  groupImage,
+  onPress,
+}: {
+  category: BrandCategory;
+  groupImage: string | null;
+  onPress: (category: BrandCategory) => void;
+}) {
+  const sources = useMemo(
+    () =>
+      [groupImage, category.image].filter(
+        (uri): uri is string => !!uri,
+      ),
+    [groupImage, category.image],
+  );
+  const [failedCount, setFailedCount] = useState(0);
+  const image = sources[failedCount] ?? null;
+  return (
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onPress={() => onPress(category)}
+      style={styles.categoryCard}
+    >
+      {image ? (
+        <FastImage
+          key={image}
+          onError={() => setFailedCount(count => count + 1)}
+          resizeMode={FastImage.resizeMode.cover}
+          source={{ uri: image }}
+          style={styles.categoryImage}
+        />
+      ) : (
+        <View style={[styles.categoryImage, styles.categoryFallback]}>
+          <Image
+            resizeMode="contain"
+            source={bim}
+            style={styles.categoryPlaceholder}
+          />
+        </View>
+      )}
+      <View style={styles.categoryChevron}>
+        <MaterialCommunityIcons color="#FFFFFF" name="chevron-right" size={16} />
+      </View>
+      <View style={styles.categoryOverlay}>
+        <Text numberOfLines={2} style={styles.categoryName}>
+          {category.name}
+        </Text>
+        <Text style={styles.categoryCount}>
+          {category.count} {category.count === 1 ? 'product' : 'products'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 const BrandScreen = ({ navigation, route }: Props) => {
   const { brand } = route.params;
 
   const [logoFailed, setLogoFailed] = useState(!brand.image);
-  const itemsQuery = useItemsByBrand(brand.id);
-  const items = itemsQuery.data ?? EMPTY_ITEMS;
-  const loading = itemsQuery.isPending;
+  // The brand's products are shown as category (Item Group) cards; a card
+  // opens that category's products on BrandCategoryItems.
+  const categoriesQuery = useBrandCategories(brand.id);
+  const categories = categoriesQuery.data ?? EMPTY_CATEGORIES;
+  // Card images come from the Item Group itself (the Categories tab's tree).
+  const itemGroupsQuery = useCategories();
+  const imageByGroup = useMemo(
+    () =>
+      new Map(
+        (itemGroupsQuery.data ?? []).map(group => [group.id, group.image]),
+      ),
+    [itemGroupsQuery.data],
+  );
+  // The first category's items stand in for the brand: they place the
+  // delivery estimate and find kits sold under the brand.
+  const firstGroup = categories[0]?.name ?? null;
+  const sampleQuery = useItemsByBrandGroup(brand.id, firstGroup);
+  const sampleItems = sampleQuery.data ?? EMPTY_ITEMS;
+  const bundlesQuery = useProductBundles();
+  const allBundles = bundlesQuery.data ?? EMPTY_BUNDLES;
+  // A kit belongs here if its Item carries this brand, or if the brand's
+  // item list includes it.
+  const bundles = useMemo(() => {
+    const brandItemIds = new Set(sampleItems.map(item => item.id));
+    return allBundles.filter(
+      bundle =>
+        bundle.item.brand === brand.id || brandItemIds.has(bundle.item.id),
+    );
+  }, [allBundles, sampleItems, brand.id]);
+  const loading = categoriesQuery.isPending;
   const error =
-    itemsQuery.isError && !itemsQuery.data
+    categoriesQuery.isError && !categoriesQuery.data
       ? 'Could not load products. Check your connection and try again.'
       : null;
-  const loadItems = useCallback(() => {
-    itemsQuery.refetch();
-  }, [itemsQuery]);
+  const loadCategories = useCallback(() => {
+    categoriesQuery.refetch();
+  }, [categoriesQuery]);
   const [description] = useState<string | null>(
     brand.description?.trim() || null,
   );
   const [descExpanded, setDescExpanded] = useState(false);
   const [descMeasured, setDescMeasured] = useState(false);
   const [descNeedsToggle, setDescNeedsToggle] = useState(false);
-  const reviews = useSupplierReviews(brand.name).data ?? EMPTY_REVIEWS;
+  const reviewsQuery = useSupplierReviews(brand.name);
+  const reviews = reviewsQuery.data ?? EMPTY_REVIEWS;
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
+
+  // Pull-to-refresh keeps the current grid on screen and leaves it
+  // untouched if the refetch fails.
+  const refreshBrand = useCallback(
+    () =>
+      Promise.all([
+        categoriesQuery.refetch(),
+        // `refetch` ignores `enabled`, so only reload a loaded category.
+        firstGroup ? sampleQuery.refetch() : undefined,
+        bundlesQuery.refetch(),
+        reviewsQuery.refetch(),
+      ]),
+    [categoriesQuery, firstGroup, sampleQuery, bundlesQuery, reviewsQuery],
+  );
 
   const onDescriptionLayout = useCallback(
     (event: NativeSyntheticEvent<TextLayoutEventData>) => {
@@ -287,45 +424,49 @@ const BrandScreen = ({ navigation, route }: Props) => {
     [descMeasured],
   );
 
-  const openProduct = useCallback(
-    (item: CategoryItem) => navigation.navigate('ProductDetail', { item }),
+  const openKit = useCallback(
+    (bundle?: ProductBundle) =>
+      navigation.navigate(
+        'WeeklyKits',
+        bundle ? { kitId: bundle.item.id } : undefined,
+      ),
     [navigation],
   );
 
-  const handleToggleWishlist = useCallback(
-    (item: CategoryItem) => {
-      if (isWishlisted(item.id)) {
-        navigation.navigate('Wishlist');
-      }
-    },
-    [navigation],
+  const openCategory = useCallback(
+    (category: BrandCategory) =>
+      navigation.navigate('BrandCategoryItems', {
+        brand,
+        itemGroup: category.name,
+      }),
+    [navigation, brand],
   );
 
-  const renderItem = useCallback(
-    ({ item }: ListRenderItemInfo<CategoryItem>) => (
-      <View style={styles.cardWrapper}>
-        <ProductCard
-          item={item}
-          onPress={openProduct}
-          onToggleWishlist={handleToggleWishlist}
-        />
-      </View>
+  const renderCategory = useCallback(
+    ({ item: category }: ListRenderItemInfo<BrandCategory>) => (
+      <BrandCategoryCard
+        category={category}
+        groupImage={imageByGroup.get(category.name) ?? null}
+        onPress={openCategory}
+      />
     ),
-    [openProduct, handleToggleWishlist],
+    [imageByGroup, openCategory],
   );
 
   // The Brand the screen was opened with carries no location of its own —
   // borrow the first loaded item's supplier location so the pill reflects
   // real distance, not a guess. Items can span multiple suppliers for a
   // brand, so this is an approximation, not an exact per-item value.
-  const representativeItem = items[0] ?? null;
+  const representativeItem = sampleItems[0] ?? null;
   const deliveryEstimate = useDeliveryEstimate({
     latitude: representativeItem?.supplierLatitude,
     longitude: representativeItem?.supplierLongitude,
     address: representativeItem?.supplierAddress,
   });
 
-  const productCount = loading ? '…' : String(items.length);
+  const productCount = loading
+    ? '…'
+    : String(categories.reduce((sum, category) => sum + category.count, 0));
   const visibleReviews = useMemo(
     () =>
       reviewsExpanded
@@ -479,8 +620,16 @@ const BrandScreen = ({ navigation, route }: Props) => {
           </View>
         ) : null}
 
-        {!loading && !error && items.length > 0 ? (
-          <Text style={styles.gridHeading}>All products</Text>
+        {bundles.length > 0 ? (
+          <WeeklyKitsSection bundles={bundles} onOpenKit={openKit} />
+        ) : null}
+
+        {!loading && !error && categories.length > 0 ? (
+          <View style={styles.controls}>
+            <Text style={[styles.sectionHeading, styles.categoriesHeading]}>
+              Categories
+            </Text>
+          </View>
         ) : null}
       </View>
     ),
@@ -496,9 +645,11 @@ const BrandScreen = ({ navigation, route }: Props) => {
       reviews,
       reviewsExpanded,
       visibleReviews,
+      bundles,
+      openKit,
       loading,
       error,
-      items.length,
+      categories,
     ],
   );
 
@@ -509,7 +660,10 @@ const BrandScreen = ({ navigation, route }: Props) => {
       <FlatList
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.listContent}
-        data={loading || error ? [] : items}
+        data={loading || error ? EMPTY_CATEGORIES : categories}
+        refreshControl={
+          <AppRefreshControl onRefresh={refreshBrand} />
+        }
         keyExtractor={keyExtractor}
         ListHeaderComponent={brandHeader}
         ListFooterComponent={
@@ -527,12 +681,12 @@ const BrandScreen = ({ navigation, route }: Props) => {
               <Text style={styles.stateText}>{error}</Text>
               <ActionButton
                 label="Retry"
-                onPress={loadItems}
+                onPress={loadCategories}
                 style={styles.retryButton}
                 variant="dark"
               />
             </View>
-          ) : items.length === 0 ? (
+          ) : categories.length === 0 && bundles.length === 0 ? (
             <View style={styles.centeredState}>
               <MaterialCommunityIcons
                 color="#C6CDD3"
@@ -546,12 +700,8 @@ const BrandScreen = ({ navigation, route }: Props) => {
           ) : null
         }
         numColumns={NUM_COLUMNS}
-        renderItem={renderItem}
+        renderItem={renderCategory}
         showsVerticalScrollIndicator={false}
-        initialNumToRender={6}
-        maxToRenderPerBatch={8}
-        windowSize={7}
-        removeClippedSubviews
       />
     </View>
   );
@@ -650,9 +800,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     width: LOGO_SIZE,
   },
+  // The largest square that fits inside the round ring (1/√2 of it), so a
+  // square or wide logo's corners aren't clipped by the circle.
   logo: {
-    height: '100%',
-    width: '100%',
+    height: '70%',
+    width: '70%',
   },
   logoPlaceholder: {
     height: '55%',
@@ -827,21 +979,70 @@ const styles = StyleSheet.create({
   },
 
   /* Grid */
-  gridHeading: {
-    color: BRAND_NAVY,
-    fontSize: 16,
-    fontWeight: '900',
+  controls: {
     marginBottom: 12,
     marginTop: 24,
+  },
+  categoriesHeading: {
     paddingHorizontal: GRID_PADDING,
   },
   row: {
     gap: GRID_GAP,
     paddingHorizontal: GRID_PADDING,
   },
-  cardWrapper: {
+  categoryCard: {
+    backgroundColor: '#F2F2F2',
+    borderColor: '#E3E7EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    height: 120,
     marginBottom: GRID_GAP,
+    overflow: 'hidden',
     width: CARD_WIDTH,
+  },
+  categoryImage: {
+    height: '100%',
+    width: '100%',
+  },
+  categoryFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryPlaceholder: {
+    height: '40%',
+    opacity: 0.3,
+    width: '40%',
+  },
+  categoryChevron: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(8,24,40,0.45)',
+    borderRadius: 999,
+    height: 22,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 6,
+    top: 6,
+    width: 22,
+  },
+  categoryOverlay: {
+    backgroundColor: 'rgba(8,24,40,0.45)',
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    position: 'absolute',
+    right: 0,
+  },
+  categoryName: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  categoryCount: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
   },
 
   centeredState: {

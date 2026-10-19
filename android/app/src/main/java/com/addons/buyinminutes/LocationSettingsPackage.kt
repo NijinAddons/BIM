@@ -7,7 +7,11 @@ import com.facebook.react.uimanager.ViewManager
 
 class LocationSettingsPackage : ReactPackage {
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-      listOf(LocationSettingsModule(reactContext), AppWindowModule(reactContext))
+      listOf(
+          LocationSettingsModule(reactContext),
+          AppWindowModule(reactContext),
+          SmsUserConsentModule(reactContext),
+      )
 
   override fun createViewManagers(
       reactContext: ReactApplicationContext,

@@ -11,12 +11,9 @@ import {
   FlatList,
   Image,
   ListRenderItemInfo,
-  RefreshControl,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,13 +21,19 @@ import type { NativeSyntheticEvent, TextLayoutEventData } from 'react-native';
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { bim } from '../../assets/images';
-import { ActionButton, ProductCard, ScreenHeader } from '../../components';
+import {
+  ActionButton,
+  AppRefreshControl,
+  ProductCard,
+  ProductFilterBar,
+  ScreenHeader,
+  useProductFilters,
+} from '../../components';
 import { useDeliveryEstimate } from '../../hooks/useDeliveryEstimate';
 import { isWishlisted } from '../../hooks/useWishlist';
 import type { RootStackScreenProps } from '../../navigation/types';
 import {
   useItemsBySupplier,
-  useManualRefresh,
   useStore,
   useSupplierReviews,
 } from '../../queries';
@@ -60,15 +63,6 @@ const CARD_WIDTH =
   NUM_COLUMNS;
 
 const SCROLL_TOP_THRESHOLD = 600;
-
-type SortMode = 'featured' | 'priceAsc' | 'priceDesc';
-
-const SORT_CYCLE: SortMode[] = ['featured', 'priceAsc', 'priceDesc'];
-const SORT_LABEL: Record<SortMode, string> = {
-  featured: 'Featured',
-  priceAsc: 'Price: low to high',
-  priceDesc: 'Price: high to low',
-};
 
 const AnimatedFlatList = Animated.createAnimatedComponent(
   FlatList,
@@ -166,9 +160,8 @@ const StoreScreen = ({ navigation, route }: Props) => {
   const reviewsQuery = useSupplierReviews(supplierKey);
   const reviews = reviewsQuery.data ?? EMPTY_REVIEWS;
   const [reviewsExpanded, setReviewsExpanded] = useState(false);
-  const [query, setQuery] = useState('');
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
-  const [sort, setSort] = useState<SortMode>('featured');
+  const filters = useProductFilters(items);
+  const { visibleItems } = filters;
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const listRef = useRef<FlatList<CategoryItem>>(null);
@@ -190,52 +183,6 @@ const StoreScreen = ({ navigation, route }: Props) => {
   const refreshStore = useCallback(
     () => Promise.all([itemsQuery.refetch(), reviewsQuery.refetch()]),
     [itemsQuery, reviewsQuery],
-  );
-  const { refreshing, onRefresh } = useManualRefresh(refreshStore);
-
-  const groups = useMemo(() => {
-    const counts = new Map<string, number>();
-    items.forEach(item => {
-      if (item.itemGroup) {
-        counts.set(item.itemGroup, (counts.get(item.itemGroup) ?? 0) + 1);
-      }
-    });
-    return [...counts.entries()]
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [items]);
-
-  const visibleItems = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    const filtered = items.filter(
-      item =>
-        (!activeGroup || item.itemGroup === activeGroup) &&
-        (!needle ||
-          item.name.toLowerCase().includes(needle) ||
-          (item.brand ?? '').toLowerCase().includes(needle)),
-    );
-    if (sort === 'featured') {
-      return filtered;
-    }
-    return [...filtered].sort((a, b) =>
-      sort === 'priceAsc' ? a.price - b.price : b.price - a.price,
-    );
-  }, [items, query, activeGroup, sort]);
-
-  const isFiltering = query.trim() !== '' || activeGroup !== null;
-
-  const clearFilters = useCallback(() => {
-    setQuery('');
-    setActiveGroup(null);
-  }, []);
-
-  const cycleSort = useCallback(
-    () =>
-      setSort(
-        current =>
-          SORT_CYCLE[(SORT_CYCLE.indexOf(current) + 1) % SORT_CYCLE.length],
-      ),
-    [],
   );
 
   const onScroll = useMemo(
@@ -481,103 +428,10 @@ const StoreScreen = ({ navigation, route }: Props) => {
 
         {!loading && !error && items.length > 0 ? (
           <View style={styles.controls}>
-            <View style={styles.gridHeadRow}>
-              <Text style={styles.gridHeadingInline}>
-                {isFiltering
-                  ? `${visibleItems.length} of ${items.length} products`
-                  : 'All products'}
-              </Text>
-              <TouchableOpacity
-                accessibilityLabel={`Sort: ${SORT_LABEL[sort]}. Tap to change`}
-                activeOpacity={0.7}
-                hitSlop={8}
-                onPress={cycleSort}
-                style={[
-                  styles.sortButton,
-                  sort !== 'featured' && styles.sortButtonActive,
-                ]}
-              >
-                <MaterialCommunityIcons
-                  color={sort !== 'featured' ? '#ffffff' : BRAND_NAVY}
-                  name="sort"
-                  size={14}
-                />
-                <Text
-                  style={[
-                    styles.sortText,
-                    sort !== 'featured' && styles.sortTextActive,
-                  ]}
-                >
-                  {SORT_LABEL[sort]}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.searchBox}>
-              <MaterialCommunityIcons color={MUTED} name="magnify" size={20} />
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={setQuery}
-                placeholder={`Search in ${store.name}`}
-                placeholderTextColor={MUTED}
-                returnKeyType="search"
-                style={styles.searchInput}
-                value={query}
-              />
-              {query ? (
-                <TouchableOpacity
-                  accessibilityLabel="Clear search"
-                  hitSlop={8}
-                  onPress={() => setQuery('')}
-                >
-                  <MaterialCommunityIcons
-                    color={MUTED}
-                    name="close-circle"
-                    size={18}
-                  />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            {groups.length > 1 ? (
-              <ScrollView
-                contentContainerStyle={styles.chipRowContent}
-                horizontal
-                keyboardShouldPersistTaps="handled"
-                showsHorizontalScrollIndicator={false}
-                style={styles.chipRow}
-              >
-                {[{ name: null, count: items.length }, ...groups].map(group => {
-                  const selected = activeGroup === group.name;
-                  return (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      key={group.name ?? 'all'}
-                      onPress={() => setActiveGroup(group.name)}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          selected && styles.chipTextSelected,
-                        ]}
-                      >
-                        {group.name ?? 'All'}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.chipCount,
-                          selected && styles.chipCountSelected,
-                        ]}
-                      >
-                        {group.count}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : null}
+            <ProductFilterBar
+              filters={filters}
+              placeholder={`Search in ${store.name}`}
+            />
           </View>
         ) : null}
       </View>
@@ -599,13 +453,7 @@ const StoreScreen = ({ navigation, route }: Props) => {
       loading,
       error,
       items.length,
-      isFiltering,
-      visibleItems.length,
-      sort,
-      cycleSort,
-      query,
-      groups,
-      activeGroup,
+      filters,
       deliveryEstimate,
     ],
   );
@@ -625,12 +473,7 @@ const StoreScreen = ({ navigation, route }: Props) => {
         onScroll={onScroll}
         scrollEventThrottle={16}
         refreshControl={
-          <RefreshControl
-            colors={[ACCENT_TEAL]}
-            onRefresh={onRefresh}
-            refreshing={refreshing}
-            tintColor={ACCENT_TEAL}
-          />
+          <AppRefreshControl onRefresh={refreshStore} />
         }
         keyExtractor={keyExtractor}
         ListHeaderComponent={storeHeader}
@@ -675,7 +518,7 @@ const StoreScreen = ({ navigation, route }: Props) => {
               <Text style={styles.stateText}>
                 No products match your search.
               </Text>
-              <TouchableOpacity hitSlop={8} onPress={clearFilters}>
+              <TouchableOpacity hitSlop={8} onPress={filters.clear}>
                 <Text style={styles.clearFilters}>Clear filters</Text>
               </TouchableOpacity>
             </View>
@@ -915,90 +758,6 @@ const styles = StyleSheet.create({
   /* Grid */
   controls: {
     marginTop: 24,
-  },
-  gridHeadRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingHorizontal: GRID_PADDING,
-  },
-  gridHeadingInline: {
-    color: BRAND_NAVY,
-    flexShrink: 1,
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  sortButton: {
-    alignItems: 'center',
-    backgroundColor: '#F4F6F8',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-  },
-  sortButtonActive: {
-    backgroundColor: BRAND_NAVY,
-  },
-  sortText: {
-    color: BRAND_NAVY,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  sortTextActive: {
-    color: '#ffffff',
-  },
-  searchBox: {
-    alignItems: 'center',
-    backgroundColor: '#F4F6F8',
-    borderRadius: 12,
-    flexDirection: 'row',
-    gap: 8,
-    marginHorizontal: GRID_PADDING,
-    paddingHorizontal: 12,
-  },
-  searchInput: {
-    color: BRAND_NAVY,
-    flex: 1,
-    fontSize: 14,
-    paddingVertical: 11,
-  },
-  chipRow: {
-    marginBottom: 4,
-    marginTop: 12,
-  },
-  chipRowContent: {
-    gap: 8,
-    paddingHorizontal: GRID_PADDING,
-  },
-  chip: {
-    alignItems: 'center',
-    backgroundColor: '#F4F6F8',
-    borderRadius: 999,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 13,
-    paddingVertical: 7,
-  },
-  chipSelected: {
-    backgroundColor: BRAND_NAVY,
-  },
-  chipText: {
-    color: BRAND_NAVY,
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  chipTextSelected: {
-    color: '#ffffff',
-  },
-  chipCount: {
-    color: MUTED,
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  chipCountSelected: {
-    color: ACCENT_TEAL,
   },
   clearFilters: {
     color: ACCENT_TEAL,

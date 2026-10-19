@@ -35,18 +35,22 @@ type Props = {
   phone?: string;
 };
 
-type OtpVerifyModule = {
-  getHash?: () => Promise<string[]>;
-  getOtp: () => Promise<boolean>;
+// Android SMS User Consent API (android/.../SmsUserConsentModule.kt): when
+// the OTP SMS arrives, Android asks the user with one tap to share it, and
+// its text comes back as an event. Unlike the SMS Retriever API it doesn't
+// need the app's signature hash in the SMS, which the backend doesn't add.
+type SmsUserConsentModule = {
+  start: () => Promise<boolean>;
+  stop: () => void;
 };
 
-const getOtpVerifyModule = (): OtpVerifyModule | null => {
-  try {
-    return NativeModules.OtpVerify ?? null;
-  } catch {
-    return null;
-  }
-};
+const SMS_CONSENT_EVENT = 'SmsUserConsent:message';
+
+const getSmsUserConsentModule = (): SmsUserConsentModule | null =>
+  Platform.OS === 'android' ? NativeModules.SmsUserConsent ?? null : null;
+
+const extractOtp = (message: string): string | null =>
+  message.match(/(?:^|\D)(\d{6})(?!\d)/)?.[1] ?? null;
 
 const DEFAULT_OTP_EXPIRY_SECONDS = 60;
 
@@ -84,73 +88,37 @@ export default function OtpScreen({authFlowToken, onBack, onVerified, phone}: Pr
     return () => clearTimeout(focusTimer);
   }, []);
 
+  // Restarted on every resend: each listen covers one SMS for 5 minutes.
+  const [smsListenKey, setSmsListenKey] = useState(0);
+
   useEffect(() => {
-    if (Platform.OS !== 'android') {
+    const consent = getSmsUserConsentModule();
+    if (!consent) {
       return;
     }
 
     let isMounted = true;
-    const otpVerifyModule = getOtpVerifyModule();
-    let otpSubscription: {remove: () => void} | null = null;
-
-    if (!otpVerifyModule) {
-      console.log('OTP retriever module not available');
-      return;
-    }
-
-    console.log('OTP retriever module loaded');
-
-    const startOtpListener = async () => {
-      try {
-        console.log('OTP screen Android retriever init');
-
-        if (!otpVerifyModule.getHash) {
-          console.log('OTP retriever getHash not available on module');
+    const subscription = new NativeEventEmitter(consent as never).addListener(
+      SMS_CONSENT_EVENT,
+      (message: unknown) => {
+        const code = typeof message === 'string' ? extractOtp(message) : null;
+        if (isMounted && code) {
+          setVerificationMessage('');
+          setOtp(code);
         }
+      },
+    );
 
-        const appHashes = otpVerifyModule.getHash
-          ? await otpVerifyModule.getHash()
-          : [];
-
-        console.log('OTP retriever app hashes result', appHashes);
-
-        if (__DEV__ && appHashes.length > 0) {
-          console.log('OTP retriever app hashes', appHashes);
-        }
-
-        await otpVerifyModule.getOtp();
-        console.log('OTP retriever listener started');
-        const eventEmitter = new NativeEventEmitter(otpVerifyModule as never);
-        otpSubscription = eventEmitter.addListener(
-          'com.faizalshap.otpVerify:otpReceived',
-          message => {
-          console.log('OTP retriever message received', message);
-          if (!isMounted || typeof message !== 'string') {
-            return;
-          }
-
-          const matchedOtp = message.match(/\b(\d{6})\b/);
-
-          if (matchedOtp?.[1]) {
-            onChangeOtp(matchedOtp[1]);
-            otpSubscription?.remove();
-            otpSubscription = null;
-          }
-          },
-        );
-      } catch (error) {
-        console.log('OTP retriever init failed', error);
-        // Keep the manual entry flow working even if SMS retriever is unavailable.
-      }
-    };
-
-    startOtpListener();
+    consent.start().catch(() => {
+      // Manual entry keeps working if Play Services can't listen.
+    });
 
     return () => {
       isMounted = false;
-      otpSubscription?.remove();
+      subscription.remove();
+      consent.stop();
     };
-  }, []);
+  }, [smsListenKey]);
 
   const onChangeOtp = (value: string) => {
     const digits = value.replace(/\D/g, '');
@@ -206,6 +174,7 @@ export default function OtpScreen({authFlowToken, onBack, onVerified, phone}: Pr
       setOtp('');
       setVerificationMessage('');
       setResendIn(DEFAULT_OTP_EXPIRY_SECONDS);
+      setSmsListenKey(key => key + 1);
       setMaxAttempts(null);
       setRemainingAttempts(null);
       inputRef.current?.focus();
@@ -394,10 +363,15 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '700',
   },
+  // Kept 1×1 rather than 0×0: Android's autofill and iOS's "From Messages"
+  // code suggestion skip fields with no size.
   hiddenInput: {
-    height: 0,
-    opacity: 0,
-    width: 0,
+    height: 1,
+    left: 0,
+    opacity: 0.01,
+    position: 'absolute',
+    top: 0,
+    width: 1,
   },
   button: {
     alignItems: 'center',

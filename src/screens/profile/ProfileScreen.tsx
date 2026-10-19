@@ -4,7 +4,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -16,6 +15,7 @@ import {
   ActionButton,
   CustomAlert,
   ListCard,
+  NotificationBell,
   SectionTitle,
 } from '../../components';
 import { signOut, useAuthStatus, useAuthUser } from '../../hooks/useAuth';
@@ -24,8 +24,7 @@ import { useProfilePhoto } from '../../hooks/useProfilePhoto';
 import { useWishlist } from '../../hooks/useWishlist';
 import type { ProfileStackScreenProps } from '../../navigation/types';
 import { useOrdersForUser } from '../../queries';
-import { BORDER, CARD, MUTED, TEXT } from '../../theme/colors';
-import { iconBox } from '../../theme/layout';
+import { CARD, MUTED, TEXT } from '../../theme/colors';
 import {
   AccountHeroCard,
   GuestHeroCard,
@@ -85,14 +84,7 @@ export default function ProfileScreen() {
 
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.title}>My Account</Text>
-        {isSignedIn ? (
-          <TouchableOpacity
-            onPress={() => setComingSoon('Notifications')}
-            style={styles.bellButton}
-          >
-            <MaterialCommunityIcons color={TEXT} name="bell-outline" size={20} />
-          </TouchableOpacity>
-        ) : null}
+        {isSignedIn ? <NotificationBell /> : null}
       </View>
 
       <ScrollView
@@ -192,11 +184,6 @@ const styles = StyleSheet.create({
     color: TEXT,
     fontSize: 26,
     fontWeight: '800',
-  },
-  bellButton: {
-    ...iconBox(44, 12, CARD),
-    borderColor: BORDER,
-    borderWidth: 1,
   },
   scrollContent: {
     paddingBottom: 32,

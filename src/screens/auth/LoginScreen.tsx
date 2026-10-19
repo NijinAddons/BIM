@@ -6,6 +6,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -26,11 +27,27 @@ const BRAND_NAVY = '#1F2E3D';
 const MUTED = '#7C8A97';
 const UAE_CALLING_CODE = '971';
 const UAE_LOCAL_NUMBER_LENGTH = 9;
-// Captured once (not tied to the live, keyboard-shrunk frame) so the
-// ScrollView content stays taller than the visible area once the keyboard
-// opens on Android — otherwise it has nothing to scroll and can't bring the
-// focused input above the keyboard.
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+
+function toLocalNumber(value: string): string {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length > UAE_LOCAL_NUMBER_LENGTH && digits.startsWith('00971')) {
+    digits = digits.slice(5);
+  }
+  if (digits.length > UAE_LOCAL_NUMBER_LENGTH && digits.startsWith(UAE_CALLING_CODE)) {
+    digits = digits.slice(UAE_CALLING_CODE.length);
+  }
+  if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  return digits.slice(0, UAE_LOCAL_NUMBER_LENGTH);
+}
+
+function formatLocalNumber(digits: string): string {
+  return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5)]
+    .filter(Boolean)
+    .join(' ');
+}
 
 type Props = {
   onSkip?: () => void;
@@ -40,15 +57,13 @@ type Props = {
 export default function LoginScreen({onSkip, onContinue}: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const [mobile, setMobile] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isValid = mobile.length === UAE_LOCAL_NUMBER_LENGTH;
 
-  // On modern Android (edge-to-edge, targetSdk 35+) the window no longer
-  // shrinks for the keyboard the way `adjustResize` used to, so neither
-  // KeyboardAvoidingView nor ScrollView's own layout has anything to react
-  // to. Track the keyboard height ourselves and pad + scroll manually.
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -66,7 +81,15 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
   }, []);
 
   const onChangeMobile = (value: string) => {
-    setMobile(value.replace(/\D/g, '').slice(0, UAE_LOCAL_NUMBER_LENGTH));
+    setMobile(toLocalNumber(value));
+  };
+
+  const onSocialPress = (provider: string) => {
+    Alert.alert(
+      `${provider} sign-in coming soon`,
+      'Please continue with your mobile number for now.',
+      [{text: 'OK', onPress: () => inputRef.current?.focus()}],
+    );
   };
 
   const onContinuePress = async () => {
@@ -76,6 +99,7 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
 
     const phone = `+${UAE_CALLING_CODE}${mobile}`;
     setIsSendingOtp(true);
+    Keyboard.dismiss();
 
     try {
       const response = await requestPhoneOtp(phone);
@@ -115,33 +139,47 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
             <Text style={styles.brand}>Buy In Minutes</Text>
           </View>
 
-          {/* The keyboard space goes inside the white card, not below it —
-              padding the scroll content left a band of the gradient
-              background showing between the card and the keyboard. */}
           <View style={[styles.card, {paddingBottom: insets.bottom + 24 + keyboardHeight}]}>
-            <Text style={styles.heading}>Log in or sign up</Text>
-            <Text style={styles.subheading}>
-              Enter your mobile number. New here? We'll create your account automatically — no separate sign-up needed.
-            </Text>
+            <Text style={styles.intro}>Enter your mobile number to continue</Text>
 
-            <Text style={styles.inputLabel}>Mobile Number</Text>
-            <View style={[styles.inputRow, isValid ? styles.inputRowValid : null]}>
+            <Pressable
+              onPress={() => inputRef.current?.focus()}
+              style={[
+                styles.inputRow,
+                isFocused ? styles.inputRowFocused : null,
+                isValid ? styles.inputRowValid : null,
+              ]}>
               <Text style={styles.flag}>🇦🇪</Text>
               <Text style={styles.countryCode}>+{UAE_CALLING_CODE}</Text>
               <View style={styles.inputDivider} />
               <TextInput
+                accessibilityLabel="Mobile number"
+                autoComplete="tel"
                 keyboardType="number-pad"
-                maxLength={UAE_LOCAL_NUMBER_LENGTH}
+                onBlur={() => setIsFocused(false)}
                 onChangeText={onChangeMobile}
+                onFocus={() => setIsFocused(true)}
                 placeholder="50 123 4567"
                 placeholderTextColor="#a3a3a3"
+                ref={inputRef}
                 style={styles.input}
-                value={mobile}
+                textContentType="telephoneNumber"
+                value={formatLocalNumber(mobile)}
               />
               {isValid ? (
                 <MaterialCommunityIcons color="#2ECFC0" name="check-circle" size={20} />
+              ) : mobile.length > 0 ? (
+                <TouchableOpacity
+                  accessibilityLabel="Clear mobile number"
+                  hitSlop={10}
+                  onPress={() => {
+                    setMobile('');
+                    inputRef.current?.focus();
+                  }}>
+                  <MaterialCommunityIcons color="#a3a3a3" name="close-circle" size={20} />
+                </TouchableOpacity>
               ) : null}
-            </View>
+            </Pressable>
 
             <ActionButton
               active={isValid}
@@ -160,11 +198,6 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
               ]}
             />
 
-            <Text style={styles.helperText}>
-              We'll text you a one-time code to verify it's you.
-            </Text>
-
-            {/* Social login — disabled for now, keep for when Google/Apple sign-in is wired up.
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or continue with</Text>
@@ -179,6 +212,7 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
                   </View>
                 )}
                 label="Google"
+                onPress={() => onSocialPress('Google')}
                 style={[styles.socialButton, styles.socialButtonRowItem]}
                 textStyle={styles.socialButtonText}
                 variant="secondary"
@@ -191,12 +225,12 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
                   </View>
                 )}
                 label="Apple"
+                onPress={() => onSocialPress('Apple')}
                 style={[styles.socialButton, styles.socialButtonRowItem, styles.appleButton]}
                 textStyle={[styles.socialButtonText, styles.appleButtonText]}
                 variant="dark"
               />
             </View>
-            */}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -244,24 +278,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 20,
   },
-  heading: {
+  intro: {
     color: BRAND_NAVY,
     fontSize: 22,
     fontWeight: '800',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-  },
-  subheading: {
-    color: MUTED,
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 28,
-  },
-  inputLabel: {
-    color: BRAND_NAVY,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 10,
+    lineHeight: 30,
+    marginBottom: 20,
   },
   inputRow: {
     alignItems: 'center',
@@ -272,6 +294,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 56,
     paddingHorizontal: 16,
+  },
+  inputRowFocused: {
+    backgroundColor: '#ffffff',
+    borderColor: BRAND_NAVY,
   },
   inputRowValid: {
     borderColor: '#2ECFC0',
@@ -315,13 +341,6 @@ const styles = StyleSheet.create({
   },
   continueTextActive: {
     color: '#ffffff',
-  },
-  helperText: {
-    color: MUTED,
-    fontSize: 12,
-    lineHeight: 16,
-    marginTop: 14,
-    textAlign: 'center',
   },
   dividerRow: {
     alignItems: 'center',

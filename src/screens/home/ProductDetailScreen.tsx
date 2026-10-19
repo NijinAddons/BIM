@@ -4,6 +4,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  LayoutAnimation,
   ListRenderItemInfo,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -18,13 +19,34 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { bim } from '../../assets/images';
-import { ActionButton, ProductCard, ScreenHeader } from '../../components';
-import { addToCart, setCartQty, useCartQty } from '../../hooks/useCart';
+import {
+  ActionButton,
+  AppRefreshControl,
+  CartBar,
+  ProductCard,
+  ScreenHeader,
+} from '../../components';
+import {
+  addToCart,
+  setCartQty,
+  useCartCount,
+  useCartQty,
+} from '../../hooks/useCart';
 import { useDeliveryEstimate } from '../../hooks/useDeliveryEstimate';
 import { toggleWishlist, useIsWishlisted } from '../../hooks/useWishlist';
 import type { RootStackScreenProps } from '../../navigation/types';
-import { useItemsByBrand, useItemsByGroup } from '../../queries';
-import { CategoryItem, isOutOfStockForSupplier } from '../../services';
+import {
+  useBrands,
+  useItemImages,
+  useItemsByBrand,
+  useItemsByGroup,
+} from '../../queries';
+import {
+  CategoryItem,
+  isOutOfStockForSupplier,
+  isVegetableItem,
+} from '../../services';
+import VariantPicker, { type VariantDetail } from './VariantPicker';
 
 const BRAND_NAVY = '#1F2E3D';
 const ACCENT_TEAL = '#2ECFC0';
@@ -153,121 +175,92 @@ function Dropdown({
   );
 }
 
-type PillGroupProps = {
-  label: string;
-  options: string[];
-  value: string | null;
-  onSelect: (value: string) => void;
-};
-
-const COLOR_SWATCHES: Record<string, string> = {
-  black: '#1A1A1A',
-  white: '#FFFFFF',
-  ivory: '#F6F2E8',
-  cream: '#F3EAD3',
-  beige: '#E4D5B7',
-  grey: '#8A8F98',
-  gray: '#8A8F98',
-  silver: '#C4C8CE',
-  charcoal: '#36393F',
-  red: '#D0342C',
-  maroon: '#7B241C',
-  pink: '#E48AA8',
-  orange: '#E67E22',
-  yellow: '#F2C94C',
-  gold: '#C9A227',
-  green: '#2E8B57',
-  olive: '#7A7B2E',
-  teal: '#2ECFC0',
-  blue: '#2F6FED',
-  navy: '#1F2E4D',
-  purple: '#7A4FBF',
-  brown: '#7A4B2B',
-  tan: '#C8A878',
-  khaki: '#B7A57A',
-};
-
-function colorFor(name: string): string | null {
-  const key = name.trim().toLowerCase();
-  if (COLOR_SWATCHES[key]) {
-    return COLOR_SWATCHES[key];
-  }
-  for (const part of key.split(/[\s/_-]+/)) {
-    if (COLOR_SWATCHES[part]) {
-      return COLOR_SWATCHES[part];
-    }
-  }
-  return null;
+// Descriptions are typed in Markdown (`* ` / `- ` bullets, `**bold**`).
+// Every non-empty line becomes one point; a lone "Product Description"
+// heading is dropped since the section already has a title.
+function descriptionPoints(text: string): string[] {
+  return text
+    .split('\n')
+    .map(line => line.replace(/^\s*[*\-•]\s+/, '').trim())
+    .filter(
+      line =>
+        line !== '' &&
+        !/^(\*\*)?\s*product description\s*:?\s*(\*\*)?$/i.test(line),
+    );
 }
 
-function isLightColor(hex: string): boolean {
-  const c = hex.replace('#', '');
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 > 186;
+function renderInline(line: string) {
+  return line.split(/(\*\*[^*]+\*\*)/).map((part, index) =>
+    /^\*\*[^*]+\*\*$/.test(part) ? (
+      <Text key={index} style={styles.descriptionBold}>
+        {part.slice(2, -2)}
+      </Text>
+    ) : (
+      part
+    ),
+  );
 }
 
-const isColorAttribute = (label: string) => /colou?r/i.test(label);
+// Product Specification opens with a picker for each of the item's ERPNext
+// Item Attributes: these first, in this order, then any other attribute in
+// ERPNext's order.
+const SPEC_ATTRIBUTE_ORDER = ['pack', 'colour', 'size', 'size chart'];
 
-function PillGroup({ label, options, value, onSelect }: PillGroupProps) {
-  const colorMode = isColorAttribute(label);
+function specRank(name: string) {
+  const index = SPEC_ATTRIBUTE_ORDER.indexOf(name.toLowerCase());
+  return index === -1 ? SPEC_ATTRIBUTE_ORDER.length : index;
+}
+
+/** A titled section whose body opens and closes from its header row. */
+function CollapsibleSection({
+  children,
+  defaultOpen = false,
+  title,
+}: {
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  title: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen(value => !value);
+  }, []);
 
   return (
-    <View style={styles.optionBlock}>
-      <View style={styles.optionHeader}>
-        <Text style={styles.dropdownLabel}>{label}</Text>
-        {value ? <Text style={styles.optionSelectedValue}>{value}</Text> : null}
-      </View>
+    <View style={styles.section}>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        activeOpacity={0.7}
+        hitSlop={8}
+        onPress={toggle}
+        style={styles.collapsibleHeader}
+      >
+        <Text style={[styles.sectionTitle, styles.collapsibleTitle]}>
+          {title}
+        </Text>
+        <MaterialCommunityIcons
+          color={BRAND_NAVY}
+          name={open ? 'chevron-up' : 'chevron-down'}
+          size={22}
+        />
+      </TouchableOpacity>
+      {open ? <View style={styles.collapsibleBody}>{children}</View> : null}
+    </View>
+  );
+}
 
-      <View style={styles.optionWrap}>
-        {options.map(option => {
-          const selected = option === value;
-          const swatch = colorMode ? colorFor(option) : null;
-
-          return (
-            <TouchableOpacity
-              accessibilityLabel={option}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              activeOpacity={0.8}
-              key={option}
-              onPress={() => onSelect(option)}
-              style={[
-                styles.pill,
-                swatch ? styles.colorPill : null,
-                selected ? styles.pillSelected : null,
-              ]}
-            >
-              {swatch ? (
-                <View
-                  style={[
-                    styles.colorDot,
-                    { backgroundColor: swatch },
-                    isLightColor(swatch) ? styles.colorDotBorder : null,
-                  ]}
-                />
-              ) : null}
-              <Text
-                numberOfLines={1}
-                style={[
-                  styles.pillText,
-                  selected ? styles.pillTextSelected : null,
-                ]}
-              >
-                {option}
-              </Text>
-              {selected ? (
-                <MaterialCommunityIcons
-                  color="#ffffff"
-                  name="check"
-                  size={14}
-                />
-              ) : null}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+/** The product description as a bullet list. */
+function DescriptionPoints({ points }: { points: string[] }) {
+  return (
+    <View style={styles.pointList}>
+      {points.map((point, index) => (
+        <View key={index} style={styles.point}>
+          <View style={styles.pointDot} />
+          <Text style={styles.description}>{renderInline(point)}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -279,10 +272,20 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
   const [activeIndex, setActiveIndex] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
 
-  const images =
-    item.images.length > 0 ? item.images : item.image ? [item.image] : [];
+  // Start with the images the list already had, then swap in the full
+  // gallery once it loads.
+  const imagesQuery = useItemImages(item);
+  const fullImages = imagesQuery.data;
+  const images = fullImages?.length
+    ? fullImages
+    : item.images.length > 0
+    ? item.images
+    : item.image
+    ? [item.image]
+    : [];
   const hasMultiple = images.length > 1;
   const cartQty = useCartQty(item.id);
+  const cartCount = useCartCount();
 
   // Suppliers this item is assigned to (from the backend `supplier_options`).
   const assignedSuppliers = useMemo(
@@ -299,7 +302,10 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(
     item.supplier ?? supplierOptions[0] ?? null,
   );
-  const supplierIsChoice = supplierOptions.length > 1;
+  // Vegetables are shown under their brand only — no supplier name or
+  // supplier picker (the default supplier is used).
+  const isVegetable = isVegetableItem(item);
+  const supplierIsChoice = !isVegetable && supplierOptions.length > 1;
 
   // Out-of-stock status follows the selected supplier, since one supplier
   // assigned to this item can be out while another still has it.
@@ -342,7 +348,7 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     ? `Delivery in ${deliveryEstimate}`
     : null;
 
-  // One pill group per ERPNext variant attribute (Colour, Design, Size, …).
+  // One picker row per ERPNext variant attribute (Colour, Design, Size, …).
   const variantAttributes = item.variantAttributes ?? [];
   const [attributeSelections, setAttributeSelections] = useState<
     Record<string, string>
@@ -368,14 +374,39 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     };
   }, [navigation]);
 
-  const groupItems =
-    useItemsByGroup(item.itemGroup, { enabled: transitionDone }).data ??
-    EMPTY_ITEMS;
+  const groupQuery = useItemsByGroup(item.itemGroup, {
+    enabled: transitionDone,
+  });
+  const groupItems = groupQuery.data ?? EMPTY_ITEMS;
+  const brandsQuery = useBrands();
+  const brand = useMemo(
+    () => brandsQuery.data?.find(entry => entry.id === item.brand) ?? null,
+    [brandsQuery.data, item.brand],
+  );
+  const descriptionList = useMemo(
+    () => (item.description ? descriptionPoints(item.description) : []),
+    [item.description],
+  );
+
   // Same-brand items top up "You might also like" when the category alone
   // has little or nothing else in it.
-  const brandItems =
-    useItemsByBrand(item.brand, { enabled: transitionDone }).data ??
-    EMPTY_ITEMS;
+  const brandQuery = useItemsByBrand(item.brand, { enabled: transitionDone });
+  const brandItems = brandQuery.data ?? EMPTY_ITEMS;
+
+  // Pull-to-refresh reloads the gallery, variants and related items, then
+  // swaps in the fresh copy of this item (price, stock, description).
+  const refreshProduct = useCallback(async () => {
+    const [, group] = await Promise.all([
+      imagesQuery.refetch(),
+      // `refetch` ignores `enabled`, so skip lookups this item can't make.
+      item.itemGroup ? groupQuery.refetch() : undefined,
+      item.brand ? brandQuery.refetch() : undefined,
+    ]);
+    const fresh = group?.data?.find(member => member.id === item.id);
+    if (fresh) {
+      navigation.setParams({ item: fresh });
+    }
+  }, [imagesQuery, groupQuery, brandQuery, item, navigation]);
 
   // Category first, then brand. One card per product: other variants of
   // the item being viewed are already offered by the option pickers above,
@@ -432,6 +463,18 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     [groupItems, item],
   );
 
+  // Whether picking `value` keeps the other current picks on a real variant.
+  const isAttributeAvailable = useCallback(
+    (attributeName: string, value: string) =>
+      variantFamily.some(member =>
+        attributesMatch(member, {
+          ...attributeSelections,
+          [attributeName]: value,
+        }),
+      ),
+    [attributeSelections, variantFamily],
+  );
+
   // Changing an attribute swaps the whole screen to the matching variant.
   const handleAttributeSelect = useCallback(
     (attributeName: string, value: string) => {
@@ -463,6 +506,17 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
     },
     [attributeSelections, item.id, navigation, variantFamily],
   );
+
+  // Pack, Colour, Size, Size Chart, then the rest (see SPEC_ATTRIBUTE_ORDER).
+  const orderedAttributes = variantAttributes
+    .map((attr, order) => ({ attr, order, rank: specRank(attr.name) }))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .map(({ attr }) => attr);
+  const hasOptions = supplierIsChoice || orderedAttributes.length > 0;
+  const productDetails = [
+    { label: 'Country of origin', value: item.countryOfOrigin },
+    { label: 'Fabric', value: item.fabric },
+  ].filter((detail): detail is VariantDetail => !!detail.value);
 
   // Reset the gallery when the variant changes.
   useEffect(() => {
@@ -559,8 +613,12 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
       />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          cartCount > 0 ? styles.scrollContentWithCartBar : null,
+        ]}
         keyboardShouldPersistTaps="handled"
+        refreshControl={<AppRefreshControl onRefresh={refreshProduct} />}
         showsVerticalScrollIndicator={false}
       >
         {/* Gallery */}
@@ -688,7 +746,23 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
                 <Text style={styles.infoText}>{deliveryText}</Text>
               </View>
             ) : null}
-            {selectedSupplier ? (
+            {isVegetable ? (
+              item.brand ? (
+                <>
+                  {deliveryText ? <View style={styles.infoLine} /> : null}
+                  <View style={styles.infoRow}>
+                    <MaterialCommunityIcons
+                      color={MUTED}
+                      name="tag-outline"
+                      size={18}
+                    />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {item.brand}
+                    </Text>
+                  </View>
+                </>
+              ) : null
+            ) : selectedSupplier ? (
               <>
                 {deliveryText ? <View style={styles.infoLine} /> : null}
                 <View style={styles.infoRow}>
@@ -706,50 +780,98 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
           </View>
         </View>
 
-        <View style={styles.divider} />
-
-        {/* Options */}
-        {supplierIsChoice || variantAttributes.length > 0 ? (
-          <View style={styles.section}>
-            {supplierIsChoice ? (
-              <Dropdown
-                icon="storefront-outline"
-                label="Sold by"
-                onSelect={name => {
-                  setSelectedSupplier(name);
-                  setSupplierOpen(false);
-                }}
-                onToggle={() => setSupplierOpen(open => !open)}
-                open={supplierOpen}
-                options={supplierOptions}
-                placeholder="Choose a store"
-                value={selectedSupplier}
-              />
-            ) : null}
-
-            {variantAttributes.map(attr => (
-              <PillGroup
-                key={attr.name}
-                label={attr.name}
-                onSelect={value => handleAttributeSelect(attr.name, value)}
-                options={attributeOptions.get(attr.name) ?? [attr.value]}
-                value={attributeSelections[attr.name] ?? null}
-              />
-            ))}
-
-            {comboUnavailable ? (
-              <View style={styles.comboNote}>
+        {/* About the Brand */}
+        {brand?.description ? (
+          <>
+            <View style={styles.divider} />
+            <CollapsibleSection
+              key={`brand-${item.id}`}
+              title="About the Brand"
+            >
+              <Text style={styles.description}>{brand.description}</Text>
+              <TouchableOpacity
+                hitSlop={8}
+                onPress={() => navigation.push('BrandDetail', { brand })}
+                style={styles.readMore}
+              >
+                <Text style={styles.readMoreText}>Visit {brand.name}</Text>
                 <MaterialCommunityIcons
-                  color="#B26A00"
-                  name="information-outline"
+                  color={ACCENT_TEAL}
+                  name="chevron-right"
                   size={16}
                 />
-                <Text style={styles.comboNoteText}>
-                  That combination isn't available. Try a different option.
-                </Text>
-              </View>
-            ) : null}
-          </View>
+              </TouchableOpacity>
+            </CollapsibleSection>
+          </>
+        ) : null}
+
+        {/* Description */}
+        {descriptionList.length > 0 ? (
+          <>
+            <View style={styles.divider} />
+            <CollapsibleSection
+              defaultOpen
+              key={`desc-${item.id}`}
+              title="Product Description"
+            >
+              <DescriptionPoints points={descriptionList} />
+            </CollapsibleSection>
+          </>
+        ) : null}
+
+        {/* Product specification: the option pickers (Sold by, Pack, Colour,
+            Size, Size Chart, …), then the ERPNext Item "Details" fields. */}
+        {hasOptions || productDetails.length > 0 ? (
+          <>
+            <View style={styles.divider} />
+            <CollapsibleSection
+              defaultOpen
+              key={`spec-${item.id}`}
+              title="Product Specification"
+            >
+              {supplierIsChoice ? (
+                <Dropdown
+                  icon="storefront-outline"
+                  label="Sold by"
+                  onSelect={name => {
+                    setSelectedSupplier(name);
+                    setSupplierOpen(false);
+                  }}
+                  onToggle={() => setSupplierOpen(open => !open)}
+                  open={supplierOpen}
+                  options={supplierOptions}
+                  placeholder="Choose a store"
+                  value={selectedSupplier}
+                />
+              ) : null}
+
+              {orderedAttributes.length > 0 || productDetails.length > 0 ? (
+                <VariantPicker
+                  attributes={orderedAttributes.map(attr => ({
+                    name: attr.name,
+                    options: attributeOptions.get(attr.name) ?? [attr.value],
+                    value: attributeSelections[attr.name] ?? null,
+                  }))}
+                  details={productDetails}
+                  isAvailable={isAttributeAvailable}
+                  onSelect={handleAttributeSelect}
+                />
+              ) : null}
+
+              {comboUnavailable ? (
+                <View style={styles.comboNote}>
+                  <MaterialCommunityIcons
+                    color="#B26A00"
+                    name="information-outline"
+                    size={16}
+                  />
+                  <Text style={styles.comboNoteText}>
+                    That combination isn't available. Try a different option.
+                  </Text>
+                </View>
+              ) : null}
+            </CollapsibleSection>
+          </>
         ) : null}
 
         {/* Related */}
@@ -772,6 +894,11 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
           </>
         ) : null}
       </ScrollView>
+      <View style={styles.cartBarAnchor}>
+        <CartBar
+          onPress={() => navigation.navigate('MainTabs', { screen: 'Cart' })}
+        />
+      </View>
       <View
         style={[
           styles.footer,
@@ -855,6 +982,14 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 28,
+  },
+  // Room so the floating cart bar doesn't cover the last related products.
+  scrollContentWithCartBar: {
+    paddingBottom: 96,
+  },
+  // Zero-height row above the footer; the cart bar floats up from it.
+  cartBarAnchor: {
+    zIndex: 1,
   },
 
   wishButton: {
@@ -947,6 +1082,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginBottom: 14,
   },
+  collapsibleHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  collapsibleTitle: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  collapsibleBody: {
+    marginTop: 14,
+  },
 
   /* Title + price */
   name: {
@@ -1027,6 +1174,43 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     fontWeight: '700',
   },
+  pointList: {
+    gap: 10,
+  },
+  point: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  // Centred on the first line of text (lineHeight 21).
+  pointDot: {
+    backgroundColor: ACCENT_TEAL,
+    borderRadius: 3,
+    height: 6,
+    marginTop: 8,
+    width: 6,
+  },
+  description: {
+    color: '#4A5563',
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  descriptionBold: {
+    color: BRAND_NAVY,
+    fontWeight: '800',
+  },
+  readMore: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 2,
+    marginTop: 8,
+  },
+  readMoreText: {
+    color: ACCENT_TEAL,
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
   stockTextIn: {
     color: '#1E8E7E',
   },
@@ -1047,27 +1231,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 8,
   },
-  optionBlock: {
-    marginBottom: 20,
-  },
-  optionHeader: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 10,
-  },
-  optionSelectedValue: {
-    color: MUTED,
-    fontSize: 13,
-    fontWeight: '600',
-  },
   comboNote: {
     alignItems: 'center',
     backgroundColor: 'rgba(178,106,0,0.10)',
     borderRadius: 10,
     flexDirection: 'row',
     gap: 8,
-    marginTop: 4,
+    marginTop: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -1076,48 +1246,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
-  },
-  optionWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  pill: {
-    alignItems: 'center',
-    borderColor: BORDER,
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-    minHeight: 44,
-    minWidth: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-  },
-  colorPill: {
-    paddingLeft: 10,
-  },
-  colorDot: {
-    borderRadius: 8,
-    height: 16,
-    width: 16,
-  },
-  colorDotBorder: {
-    borderColor: BORDER,
-    borderWidth: 1,
-  },
-  pillSelected: {
-    backgroundColor: BRAND_NAVY,
-    borderColor: BRAND_NAVY,
-  },
-  pillText: {
-    color: BRAND_NAVY,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  pillTextSelected: {
-    color: '#ffffff',
   },
   dropdownField: {
     alignItems: 'center',

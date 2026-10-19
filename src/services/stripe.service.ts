@@ -26,7 +26,8 @@ export type CreateCheckoutSessionResponse = {
   success: boolean;
   checkout_url: string;
   session_id: string;
-  sales_order: string;
+  /** Always null: the Sales Order is only created once payment succeeds. */
+  sales_order: string | null;
   checkout_resume_token?: string;
 };
 

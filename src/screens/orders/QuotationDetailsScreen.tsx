@@ -4,7 +4,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -15,8 +14,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
+import { AppRefreshControl } from '../../components';
 import type { OrdersStackParamList } from '../../navigation/types';
-import { useManualRefresh, useQuotationRequest } from '../../queries';
+import { useQuotationRequest } from '../../queries';
 import type { SupplierQuote } from '../../services';
 import { QUOTATION_STYLE } from './orders.data';
 
@@ -108,7 +108,6 @@ export default function QuotationDetailsScreen({ navigation, route }: Props) {
   const request = requestQuery.data ?? null;
   const loading = requestQuery.isPending;
   const error = requestQuery.isError;
-  const { refreshing, onRefresh } = useManualRefresh(requestQuery.refetch);
 
   // As in `OrderDetailsScreen`, the list row's summary paints the header
   // and request details on the first frame.
@@ -166,11 +165,7 @@ export default function QuotationDetailsScreen({ navigation, route }: Props) {
             { paddingBottom: insets.bottom + 24 },
           ]}
           refreshControl={
-            <RefreshControl
-              onRefresh={onRefresh}
-              refreshing={refreshing}
-              tintColor={ACCENT_TEAL}
-            />
+            <AppRefreshControl onRefresh={requestQuery.refetch} />
           }
           showsVerticalScrollIndicator={false}
         >

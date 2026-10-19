@@ -57,6 +57,7 @@ type ItemRow = {
   image: string | null;
   item_group: string | null;
   stock_uom: string | null;
+  brand?: string | null;
   custom_published?: 0 | 1 | null;
   disabled?: 0 | 1 | null;
 };
@@ -66,7 +67,7 @@ type ItemPriceRow = { item_code: string; price_list_rate: number };
 function toKitItem(row: ItemRow, role: KitRole, price: number): CategoryItem {
   const image = toAbsoluteFileUrl(row.image);
   return {
-    brand: null,
+    brand: row.brand || null,
     id: row.item_code,
     image,
     images: image ? [image] : [],
@@ -159,6 +160,7 @@ export async function fetchProductBundles(): Promise<ProductBundle[]> {
           'image',
           'item_group',
           'stock_uom',
+          'brand',
           'custom_published',
           'disabled',
         ],
@@ -284,4 +286,66 @@ export function formatComponentQty(qty: number, uom: string | null): string {
   }
   const unit = uom?.trim() ?? '';
   return unit ? `${trim(qty)} ${unit}` : trim(qty);
+}
+
+export type KitItemDetails = {
+  itemCode: string;
+  name: string;
+  /** Plain text — ERPNext stores the description as HTML. */
+  description: string | null;
+  itemGroup: string | null;
+  brand: string | null;
+  countryOfOrigin: string | null;
+  images: string[];
+};
+
+type ItemDoc = {
+  item_code: string;
+  item_name: string;
+  description?: string | null;
+  item_group?: string | null;
+  brand?: string | null;
+  country_of_origin?: string | null;
+  image?: string | null;
+};
+
+function htmlToText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Full details of one item inside a kit, for the kit item sheet. Kit
+ * contents usually aren't published on their own, so this reads the Item
+ * doc directly rather than going through the storefront item lists.
+ */
+export async function fetchKitItemDetails(
+  itemCode: string,
+): Promise<KitItemDetails> {
+  const doc = await fetchResource<ItemDoc>('Item', itemCode, 'kit item');
+  const description = doc.description ? htmlToText(doc.description) : '';
+  const image = toAbsoluteFileUrl(doc.image ?? null);
+  return {
+    itemCode: doc.item_code,
+    name: doc.item_name,
+    // ERPNext defaults the description to the item name — not worth showing.
+    description:
+      description && description !== doc.item_name ? description : null,
+    itemGroup: doc.item_group || null,
+    brand: doc.brand || null,
+    countryOfOrigin: doc.country_of_origin || null,
+    images: image ? [image] : [],
+  };
 }

@@ -5,29 +5,39 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
+import {
+  StackActions,
+  useNavigation,
+  type RouteProp,
+} from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import { ActionButton, ScreenHeader } from '../../components';
 import { removeCartLines } from '../../hooks/useCart';
-import type { ProfileStackScreenProps } from '../../navigation/types';
+import type { AppParamList } from '../../navigation/types';
 import { finalizeStripeCheckout } from '../../services';
 import { invalidateOrders } from '../../queries';
+import { BORDER, TEXT } from '../../theme/colors';
 
 const ACCENT_TEAL = '#2ECFC0';
 const MUTED = '#8A94A3';
 
-type Props = ProfileStackScreenProps<'WebView'>;
+// Mounted as Profile's `WebView` (help pages) and as the root `Checkout`
+// screen (Stripe payment), so it takes its navigation from context.
+type Props = { route: RouteProp<AppParamList, 'Checkout' | 'WebView'> };
 
 const getCheckoutSessionId = (url: string): string | null => {
   const match = url.match(/[?&]session_id=([^&#]+)/);
   return match ? decodeURIComponent(match[1]) : null;
 };
 
-export default function WebViewScreen({ navigation, route }: Props) {
+export default function WebViewScreen({ route }: Props) {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { paymentCheckout, title, url } = route.params;
   const [loading, setLoading] = useState(true);
@@ -77,7 +87,12 @@ export default function WebViewScreen({ navigation, route }: Props) {
           {
             text: 'View orders',
             onPress: () =>
-              navigation.navigate('Orders', { screen: 'OrdersList' }),
+              navigation.dispatch(
+                StackActions.popTo('MainTabs', {
+                  screen: 'Orders',
+                  params: { screen: 'OrdersList' },
+                }),
+              ),
           },
         ],
       );
@@ -115,7 +130,20 @@ export default function WebViewScreen({ navigation, route }: Props) {
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       ) : null}
 
-      {paymentCheckout ? null : (
+      {paymentCheckout ? (
+        <View style={styles.checkoutHeader}>
+          <MaterialCommunityIcons color={MUTED} name="lock-outline" size={18} />
+          <Text style={styles.checkoutTitle}>{title}</Text>
+          <TouchableOpacity
+            accessibilityLabel="Close checkout"
+            hitSlop={8}
+            onPress={() => navigation.goBack()}
+            style={styles.closeButton}
+          >
+            <MaterialCommunityIcons color={TEXT} name="close" size={22} />
+          </TouchableOpacity>
+        </View>
+      ) : (
         <ScreenHeader onBack={() => navigation.goBack()} title={title} />
       )}
 
@@ -164,6 +192,27 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#ffffff',
     flex: 1,
+  },
+  checkoutHeader: {
+    alignItems: 'center',
+    borderBottomColor: BORDER,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  checkoutTitle: {
+    color: TEXT,
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  closeButton: {
+    alignItems: 'center',
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
   },
   webview: {
     flex: 1,

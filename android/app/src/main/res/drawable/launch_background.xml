@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Plain background only: the logo appears small in SplashScreen.tsx and
+         grows to full size, so it must not already be drawn here. -->
     <item android:drawable="@color/splash_background" />
-    <!-- 288dp matches the Android 12+ system splash icon size, so the logo
-         doesn't jump when the system splash hands off to this window. -->
-    <item
-        android:width="288dp"
-        android:height="288dp"
-        android:gravity="center">
-        <bitmap android:src="@drawable/splash_logo" />
-    </item>
 </layer-list>

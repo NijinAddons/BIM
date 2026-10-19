@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   queryOptions,
   useQueries,
   useQuery,
@@ -7,9 +8,14 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  fetchBrands,
   fetchCategories,
   fetchProductBundles,
+  fetchKitItemDetails,
+  fetchBrandCategories,
+  fetchItemImages,
   fetchItemsByBrand,
+  fetchItemsByBrandGroup,
   fetchItemsByGroup,
   fetchItemsBySupplier,
   fetchQuotationRequest,
@@ -34,10 +40,17 @@ const ORDER_STALE_TIME = 0;
 export const queryKeys = {
   homeFeed: ['homeFeed'] as const,
   categories: ['categories'] as const,
+  brands: ['brands'] as const,
   productBundles: ['productBundles'] as const,
+  kitItem: (itemCode: string) => ['productBundles', 'item', itemCode] as const,
   items: ['items'] as const,
   itemsByGroup: (group: string) => ['items', 'group', group] as const,
   itemsByBrand: (brand: string) => ['items', 'brand', brand] as const,
+  itemsByBrandGroup: (brand: string, group: string) =>
+    ['items', 'brand', brand, 'group', group] as const,
+  brandCategories: (brand: string) =>
+    ['items', 'brandCategories', brand] as const,
+  itemImages: (itemCode: string) => ['items', 'images', itemCode] as const,
   itemsBySupplier: (supplier: string) =>
     ['items', 'supplier', supplier] as const,
   store: (id: string) => ['stores', id] as const,
@@ -89,6 +102,23 @@ export function useProductBundles() {
   });
 }
 
+// Details for one item inside a kit; only fetched while its sheet is open.
+export function useKitItemDetails(itemCode: string | null) {
+  return useQuery({
+    queryKey: queryKeys.kitItem(itemCode ?? ''),
+    queryFn: () => fetchKitItemDetails(itemCode as string),
+    enabled: itemCode !== null,
+  });
+}
+
+// Every brand, e.g. for a product's "About the Brand" section.
+export function useBrands() {
+  return useQuery({
+    queryKey: queryKeys.brands,
+    queryFn: fetchBrands,
+  });
+}
+
 export function useCategories() {
   return useQuery(categoriesQuery);
 }
@@ -111,6 +141,31 @@ export function useItemsByBrand(
     queryKey: queryKeys.itemsByBrand(brand ?? ''),
     queryFn: () => fetchItemsByBrand(brand!),
     enabled: !!brand && (options.enabled ?? true),
+  });
+}
+
+export function useBrandCategories(brand: string) {
+  return useQuery({
+    queryKey: queryKeys.brandCategories(brand),
+    queryFn: () => fetchBrandCategories(brand),
+  });
+}
+
+export function useItemsByBrandGroup(brand: string, group: string | null) {
+  return useQuery({
+    queryKey: queryKeys.itemsByBrandGroup(brand, group ?? ''),
+    queryFn: () => fetchItemsByBrandGroup(brand, group!),
+    enabled: !!group,
+    // Keep the tabs and heading up while another category loads.
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Full image gallery for one item (lists only carry the first 2).
+export function useItemImages(item: CategoryItem) {
+  return useQuery({
+    queryKey: queryKeys.itemImages(item.id),
+    queryFn: () => fetchItemImages(item),
   });
 }
 
@@ -219,6 +274,19 @@ export function invalidateOrders(): Promise<void> {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.orders }),
     queryClient.invalidateQueries({ queryKey: queryKeys.quotations }),
+  ]).then(() => undefined);
+}
+
+/**
+ * Mark the category tree and every cached item list stale, so a product or
+ * category (un)published in ERPNext shows up without waiting out the cache.
+ * Lists on screen refetch now (the promise waits for them); the rest refetch
+ * when next opened.
+ */
+export function invalidateCatalog(): Promise<void> {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: queryKeys.categories }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.items }),
   ]).then(() => undefined);
 }
 
