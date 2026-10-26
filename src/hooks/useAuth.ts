@@ -2,6 +2,7 @@ import {useSyncExternalStore} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Keychain from 'react-native-keychain';
 
+import {signOutOfGoogle} from '../services/googleLogin.service';
 import type {AuthUser} from '../services/otpLogin.service';
 
 export type AuthStatus = 'signedOut' | 'signedIn';
@@ -104,6 +105,7 @@ export function signOut(): void {
   emit();
   Keychain.resetGenericPassword({service: KEYCHAIN_SERVICE}).catch(() => {});
   AsyncStorage.removeItem(USER_STORAGE_KEY).catch(() => {});
+  signOutOfGoogle();
 }
 
 /** Patch the cached profile's photo after a successful upload elsewhere. */

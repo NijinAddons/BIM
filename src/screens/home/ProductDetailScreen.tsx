@@ -23,6 +23,7 @@ import {
   ActionButton,
   AppRefreshControl,
   CartBar,
+  ImageViewer,
   ProductCard,
   ScreenHeader,
 } from '../../components';
@@ -271,6 +272,7 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
   const wishlisted = useIsWishlisted(item.id);
   const [activeIndex, setActiveIndex] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   // Start with the images the list already had, then swap in the full
   // gallery once it loads.
@@ -539,7 +541,13 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
 
   const renderImage = useCallback(
     ({ item: uri, index }: ListRenderItemInfo<string>) => (
-      <View style={styles.slide}>
+      <TouchableOpacity
+        accessibilityLabel="View image full screen"
+        activeOpacity={0.9}
+        disabled={failed[index]}
+        onPress={() => setViewerIndex(index)}
+        style={styles.slide}
+      >
         {failed[index] ? (
           <Image
             resizeMode="contain"
@@ -554,7 +562,7 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
             style={styles.image}
           />
         )}
-      </View>
+      </TouchableOpacity>
     ),
     [failed],
   );
@@ -649,6 +657,13 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
                 showsHorizontalScrollIndicator={false}
                 snapToInterval={IMAGE_WIDTH}
               />
+              <View pointerEvents="none" style={styles.zoomHint}>
+                <MaterialCommunityIcons
+                  color="#ffffff"
+                  name="magnify-plus-outline"
+                  size={16}
+                />
+              </View>
               {hasMultiple ? (
                 <>
                   <View style={styles.counter}>
@@ -897,9 +912,15 @@ const ProductDetailScreen = ({ navigation, route }: Props) => {
           </>
         ) : null}
       </ScrollView>
+      <ImageViewer
+        images={images}
+        initialIndex={viewerIndex ?? 0}
+        onClose={() => setViewerIndex(null)}
+        visible={viewerIndex !== null}
+      />
       <View style={styles.cartBarAnchor}>
         <CartBar
-          onPress={() => navigation.navigate('MainTabs', { screen: 'Cart' })}
+          onPress={() => navigation.navigate('Cart')}
         />
       </View>
       <View
@@ -1005,6 +1026,17 @@ const styles = StyleSheet.create({
   },
 
   /* Gallery */
+  zoomHint: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(31,46,61,0.72)',
+    borderRadius: 14,
+    bottom: 10,
+    height: 28,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 10,
+    width: 28,
+  },
   gallery: {
     backgroundColor: '#ffffff',
     borderRadius: 16,

@@ -379,7 +379,7 @@ export default function WeeklyKitsScreen({ navigation, route }: Props) {
     if (basic) {
       setCartQty({ ...basic.item, kitPlan }, 1);
     }
-    navigation.navigate('MainTabs', { screen: 'Cart' });
+    navigation.navigate('Cart');
   }, [
     autoRenew,
     basic,

@@ -32,7 +32,7 @@ import {
 import { useDeliveryFee } from '../../hooks/useDeliveryFee';
 import { useDeliveryEstimate } from '../../hooks/useDeliveryEstimate';
 import { useLocation } from '../../hooks/useLocation';
-import type { MainTabScreenProps } from '../../navigation/types';
+import type { RootStackScreenProps } from '../../navigation/types';
 import {
   createCheckoutSession,
   createRequestForQuotation,
@@ -259,7 +259,7 @@ const CartRow = ({
   );
 };
 
-type Props = MainTabScreenProps<'Cart'>;
+type Props = RootStackScreenProps<'Cart'>;
 
 const CartScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
@@ -273,13 +273,19 @@ const CartScreen = ({ navigation }: Props) => {
     .slice(0, MAX_EMPTY_CATEGORY_CHIPS);
   const openCategory = (category: Category) =>
     category.isGroup
-      ? navigation.navigate('Categories', {
-          screen: 'CategoriesList',
-          params: { parentId: category.id, parentName: category.name },
+      ? navigation.navigate('MainTabs', {
+          screen: 'Categories',
+          params: {
+            screen: 'CategoriesList',
+            params: { parentId: category.id, parentName: category.name },
+          },
         })
-      : navigation.navigate('Categories', {
-          screen: 'CategoryItems',
-          params: { categoryName: category.name, itemGroup: category.id },
+      : navigation.navigate('MainTabs', {
+          screen: 'Categories',
+          params: {
+            screen: 'CategoryItems',
+            params: { categoryName: category.name, itemGroup: category.id },
+          },
         });
   const { label: addressLabel, address: addressText } = useLocation();
   const [addressSheetOpen, setAddressSheetOpen] = useState(false);
@@ -400,15 +406,29 @@ const CartScreen = ({ navigation }: Props) => {
     [handleFeeResolved, isDelivery, removeLine],
   );
 
+  // Cart is pushed on the root stack (no longer a tab), so it needs a way back.
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+      <View style={styles.headerLeft}>
+        <TouchableOpacity
+          hitSlop={8}
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <MaterialCommunityIcons color={INK} name="chevron-left" size={28} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>My Cart</Text>
+      </View>
+      {isSignedIn ? <NotificationBell /> : null}
+    </View>
+  );
+
   if (isEmpty) {
     return (
       <View style={[styles.container, styles.emptyContainer]}>
         <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>My Cart</Text>
-          {isSignedIn ? <NotificationBell /> : null}
-        </View>
+        {header}
 
         <ScrollView
           contentContainerStyle={styles.emptyContent}
@@ -433,7 +453,7 @@ const CartScreen = ({ navigation }: Props) => {
 
           <ActionButton
             label="Start shopping"
-            onPress={() => navigation.navigate('Categories')}
+            onPress={() => navigation.navigate('MainTabs', { screen: 'Categories' })}
             style={styles.primaryCta}
           />
 
@@ -708,10 +728,7 @@ const CartScreen = ({ navigation }: Props) => {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>My Cart</Text>
-        {isSignedIn ? <NotificationBell /> : null}
-      </View>
+      {header}
 
       <FlatList
         contentContainerStyle={styles.listContent}
@@ -1314,6 +1331,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 12,
     paddingHorizontal: 20,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  backButton: {
+    marginLeft: -8,
+    marginRight: 4,
   },
   headerTitle: {
     color: INK,

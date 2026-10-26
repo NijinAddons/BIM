@@ -11,6 +11,7 @@ import type {
   CategoryItem,
   QuotationRequestSummary,
   SalesOrderSummary,
+  SocialProvider,
   Store,
 } from '../services';
 
@@ -23,15 +24,19 @@ import type {
  *   ├─ MainTabs (bottom tabs)
  *   │  ├─ Home     → HomeStack
  *   │  ├─ Categories → CategoriesStack
- *   │  ├─ Cart      (single screen)
- *   │  ├─ Orders    → OrdersStack
- *   │  └─ Profile   → ProfileStack
+ *   │  ├─ Explore   (single screen)
+ *   │  └─ Services  (single screen)
+ *   │  (+ Profile — a drawer over the tabs, opened from the header avatar)
+ *   ├─ Cart            (shared — opened from Home / product screens)
+ *   ├─ Orders → OrdersStack (shared — opened from Profile / after payment)
  *   ├─ ProductDetail   (shared — reachable from any tab / deep link)
  *   ├─ WeeklyKits      (shared — pick a weekly kit, opened from Home)
  *   ├─ BrandDetail     (shared)
  *   ├─ BrandCategoryItems (a brand's products in one category)
  *   ├─ StoreDetail     (shared)
  *   ├─ Wishlist        (shared)
+ *   ├─ SavedAddresses  (opened from the Profile drawer)
+ *   ├─ WebView         (help / policy pages, opened from the Profile drawer)
  *   ├─ Search          (shared — Home's search bar)
  *   ├─ Checkout        (Stripe payment page, opened from Cart; going back
  *   │                   returns to Cart)
@@ -61,33 +66,42 @@ export type WebViewParams = {
   paymentCheckout?: boolean;
 };
 
-export type ProfileStackParamList = {
-  ProfileHome: undefined;
-  SavedAddresses: undefined;
-  WebView: WebViewParams;
-};
-
 export type MainTabParamList = {
   Home: NavigatorScreenParams<HomeStackParamList> | undefined;
   Categories: NavigatorScreenParams<CategoriesStackParamList> | undefined;
-  Cart: undefined;
-  Orders: NavigatorScreenParams<OrdersStackParamList> | undefined;
-  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
+  Explore: undefined;
+  Services: undefined;
 };
 
 export type RootStackParamList = {
   Splash: undefined;
   MainTabs: NavigatorScreenParams<MainTabParamList> | undefined;
+  Cart: undefined;
+  Orders: NavigatorScreenParams<OrdersStackParamList> | undefined;
   ProductDetail: { item: CategoryItem };
   WeeklyKits: { kitId?: string } | undefined;
   BrandDetail: { brand: Brand };
   BrandCategoryItems: { brand: Brand; itemGroup: string };
   StoreDetail: { store: Store };
   Wishlist: undefined;
+  SavedAddresses: undefined;
+  WebView: WebViewParams;
   Search: undefined;
   Checkout: WebViewParams;
   Login: undefined;
-  Otp: { phone?: string; authFlowToken?: string } | undefined;
+  // Phone + OTP step after a Google/Apple sign-in whose account has no
+  // verified mobile number yet. Sign-in completes only after it.
+  PhoneEntry: { idToken: string; user: AuthUser; provider: SocialProvider };
+  Otp:
+    | {
+        phone?: string;
+        authFlowToken?: string;
+        // Set when verifying a phone for a pending Google/Apple sign-in.
+        socialIdToken?: string;
+        socialUser?: AuthUser;
+        socialProvider?: SocialProvider;
+      }
+    | undefined;
   ProfileDetails:
     | {
         phone?: string;
@@ -107,8 +121,7 @@ export type AppParamList = RootStackParamList &
   MainTabParamList &
   HomeStackParamList &
   CategoriesStackParamList &
-  OrdersStackParamList &
-  ProfileStackParamList;
+  OrdersStackParamList;
 
 // Makes `useNavigation()` / `useRoute()` fully typed with no generics.
 declare global {
@@ -144,11 +157,5 @@ export type CategoriesStackScreenProps<
 export type OrdersStackScreenProps<T extends keyof OrdersStackParamList> =
   CompositeScreenProps<
     NativeStackScreenProps<OrdersStackParamList, T>,
-    MainTabScreenProps<keyof MainTabParamList>
-  >;
-
-export type ProfileStackScreenProps<T extends keyof ProfileStackParamList> =
-  CompositeScreenProps<
-    NativeStackScreenProps<ProfileStackParamList, T>,
-    MainTabScreenProps<keyof MainTabParamList>
+    RootStackScreenProps<keyof RootStackParamList>
   >;

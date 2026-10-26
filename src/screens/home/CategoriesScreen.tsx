@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -14,17 +16,16 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import FastImage from '@d11/react-native-fast-image';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import {ActionButton, AppRefreshControl, NotificationBell, ProductCard, ScreenHeader} from '../../components';
+import {ActionButton, AppRefreshControl, NotificationBell, ProductCard, ProfileButton, ScreenHeader} from '../../components';
 import {useAuthStatus} from '../../hooks/useAuth';
 import {bim} from '../../assets/images';
 import {isWishlisted} from '../../hooks/useWishlist';
 import type {CategoriesStackScreenProps} from '../../navigation/types';
-import {invalidateCatalog, useCategories, useItemsByGroup} from '../../queries';
+import {invalidateCatalog, useCategories, useItemsByGroupPages} from '../../queries';
 import {Category, CategoryItem, TOP_LEVEL_PARENT} from '../../services';
 import {BORDER, CARD, GREEN, GREEN_TINT, MUTED, SURFACE, TEXT, TEXT_VARIANT} from '../../theme/colors';
 
 const EMPTY_CATEGORIES: Category[] = [];
-const EMPTY_ITEMS: CategoryItem[] = [];
 
 const BRAND_NAVY = '#1F2E3D';
 const ACCENT_TEAL = '#2ECFC0';
@@ -43,6 +44,8 @@ const LABEL_HEIGHT = 34;
 const SIDEBAR_WIDTH = 84;
 const ROOT_GRID_GAP = 12;
 const ROOT_GRID_PADDING = 16;
+// Start loading the next page of products this far from the bottom.
+const LOAD_MORE_THRESHOLD = 600;
 
 const CATEGORY_ICON_RULES: Array<[RegExp, string]> = [
   [/super|grocery|food|mart/i, 'basket-outline'],
@@ -233,8 +236,8 @@ const RootCategoriesView = ({
 
   // Only a category with no sub-categories lists its products directly.
   const showsItems = !!selectedTopId && !hasSubCategories;
-  const itemsQuery = useItemsByGroup(selectedTopId, {enabled: showsItems});
-  const items = itemsQuery.data ?? EMPTY_ITEMS;
+  const itemsQuery = useItemsByGroupPages(selectedTopId, {enabled: showsItems});
+  const {items, loadMore} = itemsQuery;
   const itemsLoading = showsItems && itemsQuery.isPending;
   const itemsError =
     itemsQuery.isError && !itemsQuery.data
@@ -244,13 +247,37 @@ const RootCategoriesView = ({
     itemsQuery.refetch();
   }, [itemsQuery]);
 
+  const handleExploreScroll = useCallback(
+    ({nativeEvent}: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const {contentOffset, contentSize, layoutMeasurement} = nativeEvent;
+      if (showsItems && layoutMeasurement.height + contentOffset.y >= contentSize.height - LOAD_MORE_THRESHOLD) {
+        loadMore();
+      }
+    },
+    [loadMore, showsItems],
+  );
+  // A page too short to scroll never fires onScroll, so also load more
+  // whenever the content doesn't yet reach past the bottom of the pane.
+  const explorePaneHeight = useRef(0);
+  const handleExploreContentSize = useCallback(
+    (_width: number, height: number) => {
+      if (showsItems && explorePaneHeight.current > 0 && height - LOAD_MORE_THRESHOLD <= explorePaneHeight.current) {
+        loadMore();
+      }
+    },
+    [loadMore, showsItems],
+  );
+
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={CARD} />
 
       <View style={[styles.header, {paddingTop: insets.top + 16}]}>
-        <Text style={styles.title}>Categories</Text>
+        <View style={styles.headerLeft}>
+          <ProfileButton />
+          <Text style={styles.title}>Categories</Text>
+        </View>
         {isSignedIn ? <NotificationBell /> : null}
       </View>
 
@@ -288,7 +315,13 @@ const RootCategoriesView = ({
 
           <ScrollView
             contentContainerStyle={styles.explorePane}
+            onContentSizeChange={handleExploreContentSize}
+            onLayout={event => {
+              explorePaneHeight.current = event.nativeEvent.layout.height;
+            }}
+            onScroll={handleExploreScroll}
             refreshControl={<AppRefreshControl color={GREEN} onRefresh={onRefreshCategories} />}
+            scrollEventThrottle={100}
             showsVerticalScrollIndicator={false}
             style={styles.exploreScroll}
           >
@@ -296,7 +329,7 @@ const RootCategoriesView = ({
 
             <View style={styles.section}>
               <Text allowFontScaling={false} style={styles.sectionTitle}>
-                {selectedTop ? `EXPLORE ${selectedTop.name.toUpperCase()}` : 'EXPLORE'}
+                What's on your mind
               </Text>
               {hasSubCategories ? (
                 subCategories.length === 0 ? (
@@ -326,6 +359,11 @@ const RootCategoriesView = ({
                       <ProductCard item={item} onPress={onSelectProduct} onToggleWishlist={onToggleProductWishlist} />
                     </View>
                   ))}
+                  {itemsQuery.isFetchingNextPage ? (
+                    <View style={styles.loadMoreSpinner}>
+                      <ActivityIndicator color={GREEN} />
+                    </View>
+                  ) : null}
                 </View>
               )}
             </View>
@@ -586,6 +624,11 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingHorizontal: 20,
   },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
   title: {
     color: TEXT,
     fontSize: 26,
@@ -658,7 +701,7 @@ const styles = StyleSheet.create({
     paddingBottom: 32,
   },
   banner: {
-    height: 130,
+    height: 180,
     marginTop: 12,
     overflow: 'hidden',
   },
@@ -726,6 +769,10 @@ const styles = StyleSheet.create({
   productCardWrapper: {
     marginBottom: ROOT_GRID_GAP,
     width: '48%',
+  },
+  loadMoreSpinner: {
+    paddingVertical: 12,
+    width: '100%',
   },
   subTile: {
     backgroundColor: CARD,

@@ -16,6 +16,7 @@ import { bim } from '../assets/images';
 import {
   formatKg,
   kitIndexForDate,
+  kitsStarted,
   nextKitDeliveryDate,
   type ProductBundle,
 } from '../services';
@@ -40,6 +41,11 @@ export function kitPriceLabel(bundle: ProductBundle): string {
   return bundle.item.price > 0
     ? `AED ${formatPrice(bundle.item.price)}`
     : 'Price coming soon';
+}
+
+/** "Week 1" from "Week 1 – Kerala Regular Kit", else the full label. */
+function weekShortLabel(bundle: ProductBundle): string {
+  return bundle.label.match(/^week\s*\d+/i)?.[0] ?? bundle.label;
 }
 
 export function kitItemCountLabel(bundle: ProductBundle): string {
@@ -134,7 +140,9 @@ export function WeeklyKitsBanner({ bundles }: { bundles: ProductBundle[] }) {
     <View style={styles.banner}>
       <View style={styles.bannerText}>
         <View style={styles.bannerPill}>
-          <Text style={styles.bannerPillText}>DELIVERED EVERY SATURDAY</Text>
+          <Text style={styles.bannerPillText}>
+            {kitsStarted() ? 'DELIVERED EVERY SATURDAY' : 'STARTS 1 NOVEMBER'}
+          </Text>
         </View>
         <Text numberOfLines={2} style={styles.bannerTitle}>
           Weekly Vegetable Kits
@@ -161,7 +169,10 @@ type SectionProps = {
 
 const kitKeyExtractor = (bundle: ProductBundle) => bundle.item.id;
 
-/** Home's "Weekly Kits" section: a compact row of this month's kits. */
+/**
+ * Home's "Weekly Kits" section. The basic kit comes with every order, so it
+ * sits on top as the shared base, and the rotating week kits row below it.
+ */
 export default function WeeklyKitsSection({
   bundles,
   first = false,
@@ -172,10 +183,13 @@ export default function WeeklyKitsSection({
     return null;
   }
 
+  const basic = bundles.find(bundle => bundle.role === 'basic') ?? null;
+  const weeks = bundles.filter(bundle => bundle.role === 'week');
+
   const renderKit = ({ item: bundle }: ListRenderItemInfo<ProductBundle>) => {
     // Only next Saturday's kit can be ordered; the rest are shown locked.
     const isNext = bundle.item.id === nextId;
-    const locked = bundle.role === 'week' && !isNext;
+    const locked = !isNext;
     return (
       <Pressable
         accessibilityState={{ disabled: locked }}
@@ -210,8 +224,17 @@ export default function WeeklyKitsSection({
               bundle.item.price > 0 ? null : styles.pricePending,
             ]}
           >
+            {/* The week kit's price already covers the basic kit. */}
             {kitPriceLabel(bundle)}
           </Text>
+          {basic ? (
+            <View style={styles.plusBasicRow}>
+              <MaterialCommunityIcons color={GREEN} name="check" size={10} />
+              <Text numberOfLines={2} style={styles.plusBasicText}>
+                Basic + {weekShortLabel(bundle)} included
+              </Text>
+            </View>
+          ) : null}
         </View>
       </Pressable>
     );
@@ -225,9 +248,47 @@ export default function WeeklyKitsSection({
           <Text style={styles.seeAll}>See all</Text>
         </Pressable>
       </View>
+      {basic ? (
+        <>
+          <Pressable
+            onPress={() => onOpenKit()}
+            style={({ pressed }) => [
+              styles.basicCard,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <KitImage bundle={basic} style={styles.basicImage} />
+            <View style={styles.basicText}>
+              <View style={styles.basicPill}>
+                <MaterialCommunityIcons color={GREEN} name="check-circle" size={11} />
+                <Text style={styles.basicPillText}>INCLUDED IN EVERY KIT</Text>
+              </View>
+              <Text numberOfLines={1} style={styles.basicName}>
+                {basic.label}
+              </Text>
+              <Text numberOfLines={1} style={styles.basicMeta}>
+                Fixed essentials · {kitWeightLabel(basic)}
+              </Text>
+            </View>
+            <Text numberOfLines={1} style={styles.includedText}>
+              Included
+            </Text>
+          </Pressable>
+          {weeks.length > 0 ? (
+            <View style={styles.plusDivider}>
+              <View style={styles.plusLine} />
+              <View style={styles.plusCircle}>
+                <MaterialCommunityIcons color="#ffffff" name="plus" size={14} />
+              </View>
+              <Text style={styles.plusLabel}>Add a rotating weekly kit</Text>
+              <View style={styles.plusLine} />
+            </View>
+          ) : null}
+        </>
+      ) : null}
       <FlatList
         contentContainerStyle={styles.kitList}
-        data={bundles}
+        data={weeks}
         horizontal
         keyExtractor={kitKeyExtractor}
         renderItem={renderKit}
@@ -276,6 +337,96 @@ const styles = StyleSheet.create({
     color: MUTED,
     fontSize: 11,
     fontWeight: '600',
+  },
+  basicCard: {
+    ...softShadow,
+    alignItems: 'center',
+    backgroundColor: GREEN_TINT,
+    borderColor: GREEN,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    marginHorizontal: 16,
+    padding: 8,
+    paddingRight: 12,
+  },
+  basicImage: {
+    borderRadius: 8,
+    height: 56,
+    width: 56,
+  },
+  basicText: {
+    flex: 1,
+    gap: 2,
+  },
+  basicPill: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: CARD,
+    borderRadius: 999,
+    flexDirection: 'row',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  basicPillText: {
+    color: GREEN,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  basicName: {
+    color: TEXT,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  basicMeta: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  plusDivider: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    marginVertical: 10,
+    paddingHorizontal: 16,
+  },
+  plusLine: {
+    backgroundColor: BORDER,
+    flex: 1,
+    height: 1,
+  },
+  plusCircle: {
+    alignItems: 'center',
+    backgroundColor: GREEN,
+    borderRadius: 10,
+    height: 20,
+    justifyContent: 'center',
+    width: 20,
+  },
+  plusLabel: {
+    color: MUTED,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  includedText: {
+    color: GREEN,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  plusBasicRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 2,
+    marginTop: 2,
+  },
+  plusBasicText: {
+    color: GREEN,
+    flexShrink: 1,
+    fontSize: 10,
+    fontWeight: '700',
   },
   kitList: {
     gap: 10,

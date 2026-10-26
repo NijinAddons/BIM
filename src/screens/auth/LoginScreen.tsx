@@ -19,9 +19,22 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import LinearGradient from 'react-native-linear-gradient';
 
-import {ActionButton} from '../../components';
+import {ActionButton, GoogleIcon} from '../../components';
 import {bim} from '../../assets/images';
-import {requestPhoneOtp} from '../../services';
+import {
+  appleLogin,
+  describeAppleSignInError,
+  describeGoogleSignInError,
+  findGoogleAccountUser,
+  getAppleAccount,
+  getGoogleAccount,
+  googleLogin,
+  isAppleSignInAvailable,
+  requestPhoneOtp,
+  signOutOfGoogle,
+  type AuthUser,
+  type SocialProvider,
+} from '../../services';
 
 const BRAND_NAVY = '#1F2E3D';
 const MUTED = '#7C8A97';
@@ -52,15 +65,21 @@ function formatLocalNumber(digits: string): string {
 type Props = {
   onSkip?: () => void;
   onContinue?: (phone: string, authFlowToken?: string) => void;
+  onSignedIn?: (sessionToken: string, user?: AuthUser) => void;
+  // Google/Apple account picked, but a verified phone is needed first. For a
+  // new user the account itself is only created after the phone OTP.
+  onNeedsPhone?: (idToken: string, user: AuthUser, provider: SocialProvider) => void;
 };
 
-export default function LoginScreen({onSkip, onContinue}: Props) {
+export default function LoginScreen({onSkip, onContinue, onSignedIn, onNeedsPhone}: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const [mobile, setMobile] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
+  const [isAppleSigningIn, setIsAppleSigningIn] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const isValid = mobile.length === UAE_LOCAL_NUMBER_LENGTH;
 
@@ -84,12 +103,83 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
     setMobile(toLocalNumber(value));
   };
 
-  const onSocialPress = (provider: string) => {
-    Alert.alert(
-      `${provider} sign-in coming soon`,
-      'Please continue with your mobile number for now.',
-      [{text: 'OK', onPress: () => inputRef.current?.focus()}],
-    );
+  const onGooglePress = async () => {
+    if (isGoogleSigningIn) {
+      return;
+    }
+
+    setIsGoogleSigningIn(true);
+    Keyboard.dismiss();
+
+    try {
+      const account = await getGoogleAccount();
+      if (!account) {
+        // User closed the account picker.
+        return;
+      }
+
+      // google_login creates the User for an unknown email, so it's only
+      // called once the account exists with a phone; everyone else verifies
+      // a phone first and the account is created/linked after that.
+      const existing = await findGoogleAccountUser(account.user.email);
+      if (!existing?.mobile_no && onNeedsPhone) {
+        onNeedsPhone(account.idToken, account.user, 'google');
+        return;
+      }
+
+      const response = await googleLogin(account.idToken);
+      if (!response?.success || !response.session_token) {
+        throw new Error(response?.message || 'Could not sign in with Google. Please try again.');
+      }
+      onSignedIn?.(response.session_token, response.user ?? account.user);
+    } catch (error) {
+      console.log('Google signIn error', error);
+      // Drop the cached Google account so the picker offers a choice again.
+      signOutOfGoogle();
+      Alert.alert('Google sign-in failed', describeGoogleSignInError(error));
+    } finally {
+      setIsGoogleSigningIn(false);
+    }
+  };
+
+  const onApplePress = async () => {
+    if (isAppleSigningIn) {
+      return;
+    }
+
+    setIsAppleSigningIn(true);
+    Keyboard.dismiss();
+
+    try {
+      const account = await getAppleAccount();
+      if (!account) {
+        // User closed the Apple sheet.
+        return;
+      }
+
+      // Same rule as Google: only sign straight in when the account already
+      // exists with a phone; everyone else verifies a phone first.
+      const existing = await findGoogleAccountUser(account.user.email);
+      if (!existing?.mobile_no && onNeedsPhone) {
+        onNeedsPhone(account.identityToken, account.user, 'apple');
+        return;
+      }
+
+      const response = await appleLogin(
+        account.identityToken,
+        account.authorizationCode,
+        account.fullName,
+      );
+      if (!response?.success || !response.session_token) {
+        throw new Error(response?.message || 'Could not sign in with Apple. Please try again.');
+      }
+      onSignedIn?.(response.session_token, response.user ?? account.user);
+    } catch (error) {
+      console.log('Apple signIn error', error);
+      Alert.alert('Apple sign-in failed', describeAppleSignInError(error));
+    } finally {
+      setIsAppleSigningIn(false);
+    }
   };
 
   const onContinuePress = async () => {
@@ -208,28 +298,33 @@ export default function LoginScreen({onSkip, onContinue}: Props) {
               <ActionButton
                 accessory={(
                   <View style={styles.socialIconBadge}>
-                    <MaterialCommunityIcons color="#4285F4" name="google" size={16} />
+                    <GoogleIcon size={16} />
                   </View>
                 )}
                 label="Google"
-                onPress={() => onSocialPress('Google')}
+                loading={isGoogleSigningIn}
+                onPress={onGooglePress}
                 style={[styles.socialButton, styles.socialButtonRowItem]}
                 textStyle={styles.socialButtonText}
                 variant="secondary"
               />
 
-              <ActionButton
-                accessory={(
-                  <View style={[styles.socialIconBadge, styles.appleIconBadge]}>
-                    <MaterialCommunityIcons color="#ffffff" name="apple" size={18} />
-                  </View>
-                )}
-                label="Apple"
-                onPress={() => onSocialPress('Apple')}
-                style={[styles.socialButton, styles.socialButtonRowItem, styles.appleButton]}
-                textStyle={[styles.socialButtonText, styles.appleButtonText]}
-                variant="dark"
-              />
+              {/* Sign in with Apple is offered on iOS only. */}
+              {isAppleSignInAvailable ? (
+                <ActionButton
+                  accessory={(
+                    <View style={[styles.socialIconBadge, styles.appleIconBadge]}>
+                      <MaterialCommunityIcons color="#ffffff" name="apple" size={18} />
+                    </View>
+                  )}
+                  label="Apple"
+                  loading={isAppleSigningIn}
+                  onPress={onApplePress}
+                  style={[styles.socialButton, styles.socialButtonRowItem, styles.appleButton]}
+                  textStyle={[styles.socialButtonText, styles.appleButtonText]}
+                  variant="dark"
+                />
+              ) : null}
             </View>
           </View>
         </ScrollView>

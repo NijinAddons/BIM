@@ -4,7 +4,7 @@ import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityI
 import {ActionButton, AppRefreshControl, ProductCard, ProductFilterBar, ScreenHeader, useProductFilters} from '../../components';
 import {isWishlisted} from '../../hooks/useWishlist';
 import type {CategoriesStackScreenProps} from '../../navigation/types';
-import {useItemsByGroup} from '../../queries';
+import {useItemsByGroupPages} from '../../queries';
 import type {CategoryItem} from '../../services';
 
 const BRAND_NAVY = '#1F2E3D';
@@ -17,15 +17,14 @@ const GRID_GAP = 14;
 const CARD_WIDTH = (Dimensions.get('window').width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
 
 const keyExtractor = (item: CategoryItem) => item.id;
-const EMPTY_ITEMS: CategoryItem[] = [];
 
 type Props = CategoriesStackScreenProps<'CategoryItems'>;
 
 const CategoryItemsScreen = ({navigation, route}: Props) => {
   const {categoryName, itemGroup} = route.params;
 
-  const itemsQuery = useItemsByGroup(itemGroup);
-  const items = itemsQuery.data ?? EMPTY_ITEMS;
+  const itemsQuery = useItemsByGroupPages(itemGroup);
+  const {items, loadMore} = itemsQuery;
   const filters = useProductFilters(items);
   const loading = itemsQuery.isPending && !itemsQuery.isError;
   // A failed refetch keeps showing the items we already have.
@@ -96,7 +95,12 @@ const CategoryItemsScreen = ({navigation, route}: Props) => {
               <ProductFilterBar filters={filters} placeholder={`Search in ${categoryName}`} />
             </View>
           }
+          ListFooterComponent={
+            itemsQuery.isFetchingNextPage ? <ActivityIndicator color={ACCENT_TEAL} style={styles.loadMoreSpinner} /> : null
+          }
           numColumns={NUM_COLUMNS}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
           refreshControl={
             <AppRefreshControl onRefresh={itemsQuery.refetch} />
           }
@@ -157,6 +161,9 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     width: CARD_WIDTH,
+  },
+  loadMoreSpinner: {
+    paddingVertical: 12,
   },
 });
 

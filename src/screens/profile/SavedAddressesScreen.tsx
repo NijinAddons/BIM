@@ -15,7 +15,7 @@ import {
   type SavedAddress,
 } from '../../hooks/useAddresses';
 import {setManualLocation, useLocation} from '../../hooks/useLocation';
-import type {ProfileStackScreenProps} from '../../navigation/types';
+import type {RootStackScreenProps} from '../../navigation/types';
 
 const BRAND_NAVY = '#1F2E3D';
 const MUTED = '#8A94A3';
@@ -26,7 +26,7 @@ const ACCENT = '#2ECFC0';
 // `editing` (null vs a SavedAddress) tells it whether to create or patch.
 type MapTarget = {mode: 'add'} | {mode: 'edit'; entry: SavedAddress};
 
-type Props = ProfileStackScreenProps<'SavedAddresses'>;
+type Props = RootStackScreenProps<'SavedAddresses'>;
 
 export default function SavedAddressesScreen({navigation}: Props) {
   const saved = useAddresses();

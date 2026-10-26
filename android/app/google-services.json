@@ -1,41 +1,34 @@
 {
   "project_info": {
-    "project_number": "586858899535",
-    "project_id": "buy-in-minutes-b0a94",
-    "storage_bucket": "buy-in-minutes-b0a94.firebasestorage.app"
+    "project_number": "1094722769176",
+    "project_id": "buy-in-minutes-c3e76",
+    "storage_bucket": "buy-in-minutes-c3e76.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:586858899535:android:f4b2f9dd51742edcc3223a",
+        "mobilesdk_app_id": "1:1094722769176:android:2b27f7de2dbd5244550e6d",
         "android_client_info": {
           "package_name": "com.addons.buyinminutes"
         }
       },
       "oauth_client": [
         {
-          "client_id": "586858899535-gsvn1k48u4j0d03bjvtemf0107csn5fm.apps.googleusercontent.com",
+          "client_id": "1094722769176-0sosifsshtq8v2dvmcet630a6jie99bi.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyAFXIydQEo7_y1PsRy_LRhTUW1MVZFiELo"
+          "current_key": "AIzaSyDMmh56LgqRXrl3S_yZq5K1ltuJ3-_Pt8g"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "586858899535-gsvn1k48u4j0d03bjvtemf0107csn5fm.apps.googleusercontent.com",
+              "client_id": "1094722769176-0sosifsshtq8v2dvmcet630a6jie99bi.apps.googleusercontent.com",
               "client_type": 3
-            },
-            {
-              "client_id": "586858899535-nc37gh2bmb63u92mk38us2dbrfblfhfk.apps.googleusercontent.com",
-              "client_type": 2,
-              "ios_info": {
-                "bundle_id": "com.addons.buyinminutes"
-              }
             }
           ]
         }

@@ -300,13 +300,17 @@ async function describeFrappeError(response: Response): Promise<string> {
     try {
       const data = JSON.parse(text) as {
         exception?: string;
-        message?: string;
+        message?: string | {message?: string};
         _server_messages?: string;
       };
+      // Endpoints that return `{success: false, message}` with an error
+      // status nest the reason one level down.
+      const message =
+        typeof data.message === 'string' ? data.message : data.message?.message;
       return (
         parseServerMessages(data._server_messages) ??
         data.exception ??
-        data.message ??
+        message ??
         text
       ).slice(0, 300);
     } catch {

@@ -4,6 +4,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -20,11 +21,13 @@ import {
 } from '../../components';
 import { signOut, useAuthStatus, useAuthUser } from '../../hooks/useAuth';
 import { useAddresses } from '../../hooks/useAddresses';
+import { useProfileDrawer } from '../../hooks/useProfileDrawer';
 import { useProfilePhoto } from '../../hooks/useProfilePhoto';
 import { useWishlist } from '../../hooks/useWishlist';
-import type { ProfileStackScreenProps } from '../../navigation/types';
+import type { RootStackScreenProps } from '../../navigation/types';
 import { useOrdersForUser } from '../../queries';
-import { CARD, MUTED, TEXT } from '../../theme/colors';
+import { BORDER, CARD, MUTED, TEXT } from '../../theme/colors';
+import { iconBox } from '../../theme/layout';
 import {
   AccountHeroCard,
   GuestHeroCard,
@@ -33,10 +36,19 @@ import {
 } from './ProfileCards';
 import { DESTRUCTIVE, MENU_SECTIONS, type MenuItem } from './profile.data';
 
-type ProfileNavProp = ProfileStackScreenProps<'ProfileHome'>['navigation'];
+// Rendered as the drawer over MainTabs, so it navigates on the root stack.
+type ProfileNavProp = RootStackScreenProps<'MainTabs'>['navigation'];
 
 export default function ProfileScreen() {
-  const navigation = useNavigation<ProfileNavProp>();
+  const rootNavigation = useNavigation<ProfileNavProp>();
+  const { close: closeDrawer } = useProfileDrawer();
+  // Close the drawer on the way out, so going back lands on the tab itself.
+  const navigation = {
+    navigate: ((...args: Parameters<ProfileNavProp['navigate']>) => {
+      closeDrawer();
+      rootNavigation.navigate(...args);
+    }) as ProfileNavProp['navigate'],
+  };
   const insets = useSafeAreaInsets();
   const isSignedIn = useAuthStatus() === 'signedIn';
   const user = useAuthUser();
@@ -84,7 +96,17 @@ export default function ProfileScreen() {
 
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.title}>My Account</Text>
-        {isSignedIn ? <NotificationBell /> : null}
+        <View style={styles.headerActions}>
+          {isSignedIn ? <NotificationBell /> : null}
+          <TouchableOpacity
+            accessibilityLabel="Close profile"
+            hitSlop={8}
+            onPress={closeDrawer}
+            style={styles.closeButton}
+          >
+            <MaterialCommunityIcons color={TEXT} name="close" size={20} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -148,6 +170,7 @@ export default function ProfileScreen() {
         onPrimaryButtonPress={() => {
           setLogoutVisible(false);
           signOut();
+          openLogin();
         }}
         primaryButtonLabel="Log Out"
         primaryButtonVariant="destructive"
@@ -179,6 +202,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 12,
     paddingHorizontal: 20,
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  closeButton: {
+    ...iconBox(44, 12, CARD),
+    borderColor: BORDER,
+    borderWidth: 1,
   },
   title: {
     color: TEXT,

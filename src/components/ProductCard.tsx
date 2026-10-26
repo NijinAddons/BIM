@@ -33,7 +33,7 @@ type Props = {
   item: ProductCardItem;
   onPress?: (item: ProductCardItem) => void;
   /**
-   * Replaces ADD TO CART's direct add, e.g. to pick a size/colour first.
+   * Replaces ADD's direct add, e.g. to pick a size/colour first.
    * The stepper shown once the item is in the cart still adds directly.
    */
   onAddPress?: (item: ProductCardItem) => void;
@@ -186,7 +186,7 @@ function ProductCard({
               style={styles.addButton}
             >
               <Text numberOfLines={1} style={styles.addButtonText}>
-                ADD TO CART
+                ADD
               </Text>
             </TouchableOpacity>
           ) : (

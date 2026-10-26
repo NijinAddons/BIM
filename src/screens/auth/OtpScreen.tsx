@@ -33,6 +33,12 @@ type Props = {
     user?: AuthUser,
   ) => void;
   phone?: string;
+  // Replaces the default `verify_phone_otp` call (e.g. linking the phone to
+  // a Google account). Throw to reject; the error message is shown.
+  onSubmitOtp?: (phone: string, otp: string, authFlowToken: string) => Promise<void>;
+  // Replaces the default `request_phone_otp` call for "Resend OTP"; must
+  // start the same kind of flow as `onSubmitOtp` verifies.
+  requestOtp?: (phone: string) => Promise<{auth_flow_token?: string}>;
 };
 
 // Android SMS User Consent API (android/.../SmsUserConsentModule.kt): when
@@ -54,7 +60,14 @@ const extractOtp = (message: string): string | null =>
 
 const DEFAULT_OTP_EXPIRY_SECONDS = 60;
 
-export default function OtpScreen({authFlowToken, onBack, onVerified, phone}: Props) {
+export default function OtpScreen({
+  authFlowToken,
+  onBack,
+  onVerified,
+  onSubmitOtp,
+  requestOtp = requestPhoneOtp,
+  phone,
+}: Props) {
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
   const [otp, setOtp] = useState('');
@@ -144,6 +157,22 @@ export default function OtpScreen({authFlowToken, onBack, onVerified, phone}: Pr
 
     setIsVerifying(true);
 
+    if (onSubmitOtp) {
+      try {
+        await onSubmitOtp(phone, otp, flowToken);
+      } catch (error) {
+        Alert.alert(
+          'Verification failed',
+          error instanceof Error && error.message
+            ? error.message
+            : 'Please try again.',
+        );
+      } finally {
+        setIsVerifying(false);
+      }
+      return;
+    }
+
     try {
       const response = await verifyPhoneOtp(phone, otp, flowToken);
       setVerificationMessage('OTP verified successfully.');
@@ -169,7 +198,7 @@ export default function OtpScreen({authFlowToken, onBack, onVerified, phone}: Pr
     setIsResending(true);
 
     try {
-      const response = await requestPhoneOtp(phone);
+      const response = await requestOtp(phone);
       setFlowToken(response.auth_flow_token);
       setOtp('');
       setVerificationMessage('');

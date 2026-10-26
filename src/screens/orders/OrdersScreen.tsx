@@ -234,7 +234,16 @@ const OrdersScreen = ({ navigation }: Props) => {
 
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-      <Text style={styles.title}>My Orders</Text>
+      <View style={styles.headerLeft}>
+        <Pressable
+          hitSlop={8}
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
+        >
+          <MaterialCommunityIcons color={TEXT} name="chevron-left" size={28} />
+        </Pressable>
+        <Text style={styles.title}>My Orders</Text>
+      </View>
       {isSignedIn ? <NotificationBell /> : null}
     </View>
   );
@@ -371,6 +380,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 12,
     paddingHorizontal: 20,
+  },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  backButton: {
+    marginLeft: -8,
+    marginRight: 4,
   },
   title: {
     color: TEXT,

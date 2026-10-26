@@ -21,3 +21,6 @@ declare module 'react-native-vector-icons/MaterialCommunityIcons' {
   const MaterialCommunityIcons: ComponentType<IconProps>;
   export default MaterialCommunityIcons;
 }
+
+// Provided by Hermes at runtime; not in React Native's bundled types.
+declare function atob(data: string): string;

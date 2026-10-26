@@ -3,6 +3,10 @@ import Geolocation from '@react-native-community/geolocation';
 
 import {GOOGLE_MAPS_API_KEY} from '../config';
 
+if (__DEV__) {
+  console.log('[location] GOOGLE_MAPS_API_KEY:', GOOGLE_MAPS_API_KEY);
+}
+
 // Without this, the native module defaults to Android's legacy raw
 // LocationManager/GPS_PROVIDER path, which waits for a full satellite lock
 // and is noticeably slow on physical devices (especially indoors). Google
@@ -178,15 +182,43 @@ type PositionOptions = {
   timeout: number;
 };
 
+// Extra slack past options.timeout before the JS-side timeout fires, so a
+// native timeout (where the provider honours one) still wins when it can.
+const TIMEOUT_GRACE_MS = 2_000;
+
 function getCoords(options: PositionOptions): Promise<Coords> {
   return new Promise((resolve, reject) => {
+    // The library's Play Services provider ignores `timeout`: its
+    // getLastLocation() listener is bound to the activity (dropped if the app
+    // is backgrounded by a permission/Settings screen) and the fallback
+    // location request never expires — so without this the promise can hang
+    // forever and leave the header stuck on "loading".
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('location-timeout'));
+      }
+    }, options.timeout + TIMEOUT_GRACE_MS);
+
     Geolocation.getCurrentPosition(
-      position =>
+      position => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         resolve({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-        }),
+        });
+      },
       error => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
         // Android reports this when GPS/network location is switched off
         // system-wide, not when the app itself lacks permission.
         if (error.code === 2) {
@@ -198,6 +230,18 @@ function getCoords(options: PositionOptions): Promise<Coords> {
       options,
     );
   });
+}
+
+// Google API calls on a stalled connection can sit for minutes before
+// failing; cap them so the header never waits on a hung request.
+const FETCH_TIMEOUT_MS = 10_000;
+
+function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, {signal: controller.signal}).finally(() =>
+    clearTimeout(timer),
+  );
 }
 
 // A full GPS lock (enableHighAccuracy) can take 10-20s+ on many Android
@@ -290,7 +334,7 @@ async function fetchNearestPlace(
     `&key=${GOOGLE_MAPS_API_KEY}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     const data = (await response.json()) as {
       results?: {
         name?: string;
@@ -331,7 +375,7 @@ async function fetchPlaceName(placeId: string): Promise<string | null> {
     `&key=${GOOGLE_MAPS_API_KEY}`;
 
   try {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url);
     const data = (await response.json()) as { result?: { name?: string } };
     return data.result?.name?.trim() || null;
   } catch {
@@ -370,7 +414,7 @@ export async function reverseGeocode(coords: Coords): Promise<GeocodedAddress> {
     `&key=${GOOGLE_MAPS_API_KEY}`;
 
   const [response, nearestPlace] = await Promise.all([
-    fetch(url),
+    fetchWithTimeout(url),
     fetchNearestPlace(coords),
   ]);
   const data = (await response.json()) as {
@@ -596,6 +640,10 @@ export async function geocodeText(
  * given and a subsequent high-accuracy fix lands somewhere meaningfully
  * different, it's called once more with the refined result.
  */
+// Once per app session, so declining the dialog doesn't re-prompt on every
+// foreground refresh.
+let accuracyPromptShown = false;
+
 export async function resolveCurrentLocation(
   onRefine?: (refined: ResolvedLocation) => void,
 ): Promise<ResolvedLocation> {
@@ -604,7 +652,18 @@ export async function resolveCurrentLocation(
   let coords: Coords;
   try {
     coords = await getFastCoords();
-  } catch {
+  } catch (error) {
+    if (error instanceof LocationServicesDisabledError) {
+      throw error;
+    }
+    // The fast tier has no source when Google Location Accuracy (Wi-Fi/cell
+    // positioning) is off, leaving GPS alone — which rarely locks indoors.
+    // Offer Play Services' in-app "turn on Location Accuracy" dialog; it
+    // resolves immediately without UI when settings are already fine.
+    if (Platform.OS === 'android' && !accuracyPromptShown) {
+      accuracyPromptShown = true;
+      await promptEnableLocationServices().catch(() => false);
+    }
     // No cached/network fix available (e.g. very first launch) — fall back
     // to waiting for a real GPS lock instead of failing outright.
     coords = await getCurrentCoords();

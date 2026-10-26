@@ -452,10 +452,14 @@ async function onlyPublished<T extends ItemResponse>(items: T[]): Promise<T[]> {
   });
 }
 
+// High enough to cover any one item group; `get_items` returns only 20 items
+// when no limit is passed.
+const GROUP_ITEMS_LIMIT = '500';
+
 function fetchGroupItemResponses(itemGroup: string): Promise<ItemResponse[]> {
   return callFrappeMethod<ItemResponse[]>(
     'buy_in_minutes.api.get_items',
-    { item_group: itemGroup },
+    { item_group: itemGroup, limit_page_length: GROUP_ITEMS_LIMIT },
     'items',
   );
 }
@@ -473,6 +477,43 @@ export async function fetchItemsByGroup(
   return toGroupItems(await fetchGroupItemResponses(itemGroup), itemGroup);
 }
 
+export type GroupItemsPage = {
+  items: CategoryItem[];
+  /** Offset of the next page, or null once the group is exhausted. */
+  nextStart: number | null;
+};
+
+/**
+ * One page of a group's items, for lists that load more as they scroll.
+ * Unpublished items are dropped after fetching, so a page can come back
+ * empty; keep reading until it has something (or the group runs out) so
+ * the list always grows and its end-of-scroll trigger fires again.
+ */
+export async function fetchItemsByGroupPage(
+  itemGroup: string,
+  start: number,
+  pageSize: number,
+): Promise<GroupItemsPage> {
+  let offset = start;
+  for (;;) {
+    const rows = await callFrappeMethod<ItemResponse[]>(
+      'buy_in_minutes.api.get_items',
+      {
+        item_group: itemGroup,
+        limit_start: String(offset),
+        limit_page_length: String(pageSize),
+      },
+      'items',
+    );
+    offset += rows.length;
+    const nextStart = rows.length < pageSize ? null : offset;
+    const items = await toGroupItems(rows, itemGroup);
+    if (items.length > 0 || nextStart === null) {
+      return { items, nextStart };
+    }
+  }
+}
+
 // Requires `buy_in_minutes.api.get_items` to honour a `brand` filter param.
 export async function fetchItemsByBrand(
   brand: string,
@@ -485,10 +526,6 @@ export async function fetchItemsByBrand(
 
   return (await onlyPublished(items)).map(item => mapItem(item));
 }
-
-// High enough to cover any one category of a brand; `get_items` returns only
-// 20 items when no limit is passed.
-const BRAND_GROUP_LIMIT = '500';
 
 export type BrandCategory = {
   name: string;
@@ -545,7 +582,7 @@ export async function fetchItemsByBrandGroup(
 ): Promise<CategoryItem[]> {
   const items = await callFrappeMethod<ItemResponse[]>(
     'buy_in_minutes.api.get_items',
-    { brand, item_group: itemGroup, limit_page_length: BRAND_GROUP_LIMIT },
+    { brand, item_group: itemGroup, limit_page_length: GROUP_ITEMS_LIMIT },
     'brand items',
   );
 

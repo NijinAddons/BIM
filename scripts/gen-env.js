@@ -18,11 +18,16 @@ const OUT_PATH = path.join(ROOT, 'src', 'config.ts');
 //
 // STRIPE_PUBLISHABLE_KEY (pk_...) is meant to be public — safe to bundle.
 // The matching secret key must only ever live on the backend.
+//
+// GOOGLE_WEB_CLIENT_ID is the OAuth "web" client (client_type 3 in
+// google-services.json). Google Sign-In issues ID tokens for this audience,
+// and the backend checks it when verifying them. Public — safe to bundle.
 const PUBLIC_KEYS = [
   'GOOGLE_MAPS_API_KEY',
   'FRAPPE_API_KEY',
   'FRAPPE_API_SECRET',
   'STRIPE_PUBLISHABLE_KEY',
+  'GOOGLE_WEB_CLIENT_ID',
 ];
 
 function parseEnv(text) {

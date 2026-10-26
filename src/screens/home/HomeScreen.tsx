@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -28,6 +34,7 @@ import {
   CartBar,
   LocationPermissionSheet,
   ProductCard,
+  ProfileButton,
   WeeklyKitsBanner,
   WeeklyKitsSection,
   type LocationPermissionVariant,
@@ -185,9 +192,12 @@ const HomeScreen = ({ navigation }: Props) => {
     variant: LocationPermissionVariant;
   }>({ visible: false, variant: 'ask' });
 
-  const showLocationSheet = useCallback((variant: LocationPermissionVariant) => {
-    setLocationSheet({ visible: true, variant });
-  }, []);
+  const showLocationSheet = useCallback(
+    (variant: LocationPermissionVariant) => {
+      setLocationSheet({ visible: true, variant });
+    },
+    [],
+  );
 
   const hideLocationSheet = useCallback(() => {
     setLocationSheet(current => ({ ...current, visible: false }));
@@ -333,7 +343,12 @@ const HomeScreen = ({ navigation }: Props) => {
     }
     AsyncStorage.setItem(LOCATION_PRIMER_KEY, '1').catch(() => {});
     requestPermissionFromSheet();
-  }, [locationSheet.variant, openLocationSettings, requestPermissionFromSheet, hideLocationSheet]);
+  }, [
+    locationSheet.variant,
+    openLocationSettings,
+    requestPermissionFromSheet,
+    hideLocationSheet,
+  ]);
 
   const onLocationSheetDismiss = useCallback(() => {
     hideLocationSheet();
@@ -382,7 +397,10 @@ const HomeScreen = ({ navigation }: Props) => {
   // preselected.
   const openKit = useCallback(
     (bundle?: ProductBundle) =>
-      navigation.navigate('WeeklyKits', bundle ? { kitId: bundle.item.id } : undefined),
+      navigation.navigate(
+        'WeeklyKits',
+        bundle ? { kitId: bundle.item.id } : undefined,
+      ),
     [navigation],
   );
 
@@ -467,7 +485,7 @@ const HomeScreen = ({ navigation }: Props) => {
               <BrandChip brand={brand} onPress={openBrand} />
             )}
             showSeeAll={brandsTotal > brands.length}
-            title="Popular Brands"
+            title="Brands"
           />
         );
       }
@@ -541,66 +559,51 @@ const HomeScreen = ({ navigation }: Props) => {
 
       <View style={headerStyle}>
         <View style={styles.headerTopRow}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            hitSlop={8}
-            onPress={onLocationPress}
-            style={styles.locationRow}
-          >
-            <View style={styles.locationIconWrap}>
-              <MaterialCommunityIcons
-                color={TEAL}
-                name="map-marker"
-                size={14}
-              />
-            </View>
-            {!headerPlace &&
-            (location.status === 'loading' || location.status === 'idle') ? (
-              <ActivityIndicator
-                color="#FFFFFF"
-                size="small"
-                style={styles.locationLoader}
-              />
-            ) : (
-              <Text
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
-                numberOfLines={1}
-                style={styles.locationText}
-              >
-                {headerPlace ??
-                  (location.status === 'denied' || location.status === 'blocked'
-                    ? 'Location access off'
-                    : location.status === 'servicesOff'
-                    ? 'Turn on location'
-                    : 'Set your location')}
-              </Text>
-            )}
-            <MaterialCommunityIcons
-              color="#FFFFFF"
-              name="chevron-down"
-              size={18}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            hitSlop={8}
-            onPress={openCart}
-            style={styles.cartButton}
-          >
-            <MaterialCommunityIcons
-              color="#FFFFFF"
-              name="cart-outline"
-              size={22}
-            />
-            {cartCount > 0 ? (
-              <View style={styles.cartBadge}>
-                <Text numberOfLines={1} style={styles.cartBadgeText}>
-                  {cartCount > 99 ? '99+' : cartCount}
-                </Text>
+          <View style={styles.headerLeft}>
+            <ProfileButton variant="dark" />
+            <TouchableOpacity
+              activeOpacity={0.7}
+              hitSlop={8}
+              onPress={onLocationPress}
+              style={styles.locationRow}
+            >
+              <View style={styles.locationIconWrap}>
+                <MaterialCommunityIcons
+                  color={TEAL}
+                  name="map-marker"
+                  size={14}
+                />
               </View>
-            ) : null}
-          </TouchableOpacity>
+              {!headerPlace &&
+              (location.status === 'loading' || location.status === 'idle') ? (
+                <ActivityIndicator
+                  color="#FFFFFF"
+                  size="small"
+                  style={styles.locationLoader}
+                />
+              ) : (
+                <Text
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  numberOfLines={1}
+                  style={styles.locationText}
+                >
+                  {headerPlace ??
+                    (location.status === 'denied' ||
+                    location.status === 'blocked'
+                      ? 'Location access off'
+                      : location.status === 'servicesOff'
+                      ? 'Turn on location'
+                      : 'Set your location')}
+                </Text>
+              )}
+              <MaterialCommunityIcons
+                color="#FFFFFF"
+                name="chevron-down"
+                size={18}
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <Pressable onPress={openSearch} style={styles.searchPill}>
@@ -609,7 +612,11 @@ const HomeScreen = ({ navigation }: Props) => {
             Search for groceries, garments & more
           </Text>
           <View style={styles.searchIcons}>
-            <MaterialCommunityIcons color={MUTED} name="tune-variant" size={18} />
+            <MaterialCommunityIcons
+              color={MUTED}
+              name="tune-variant"
+              size={18}
+            />
           </View>
         </Pressable>
 
@@ -778,11 +785,7 @@ const QuickCategoryTile = React.memo(function QuickCategoryTileComponent({
             style={styles.chipImage}
           />
         ) : (
-          <MaterialCommunityIcons
-            color={TEAL}
-            name="shape-outline"
-            size={22}
-          />
+          <MaterialCommunityIcons color={TEAL} name="shape-outline" size={22} />
         )}
       </View>
       <Text numberOfLines={1} style={styles.quickTileLabel}>
@@ -990,10 +993,7 @@ const RailSection = React.memo(function RailSectionComponent({
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{name}</Text>
         {!fitsWithoutScroll ? (
-          <TouchableOpacity
-            hitSlop={8}
-            onPress={() => onSeeAll(groupId, name)}
-          >
+          <TouchableOpacity hitSlop={8} onPress={() => onSeeAll(groupId, name)}>
             <Text style={styles.sectionAction}>See all</Text>
           </TouchableOpacity>
         ) : null}
@@ -1139,6 +1139,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  headerLeft: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexShrink: 1,
+    gap: 10,
+  },
   locationRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -1161,32 +1167,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 14,
     fontWeight: '600',
-  },
-  cartButton: {
-    alignItems: 'center',
-    height: 32,
-    justifyContent: 'center',
-    marginLeft: 12,
-    width: 32,
-  },
-  cartBadge: {
-    alignItems: 'center',
-    backgroundColor: GREEN,
-    borderColor: NAVY,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    minWidth: 17,
-    paddingHorizontal: 3,
-    position: 'absolute',
-    right: -6,
-    top: -4,
-  },
-  cartBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    lineHeight: 14,
   },
   searchPill: {
     alignItems: 'center',

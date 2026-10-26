@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import {
-  StackActions,
+  CommonActions,
   useNavigation,
   type RouteProp,
 } from '@react-navigation/native';
@@ -27,7 +27,7 @@ import { BORDER, TEXT } from '../../theme/colors';
 const ACCENT_TEAL = '#2ECFC0';
 const MUTED = '#8A94A3';
 
-// Mounted as Profile's `WebView` (help pages) and as the root `Checkout`
+// Mounted as the root `WebView` (help pages) and as the root `Checkout`
 // screen (Stripe payment), so it takes its navigation from context.
 type Props = { route: RouteProp<AppParamList, 'Checkout' | 'WebView'> };
 
@@ -87,12 +87,22 @@ export default function WebViewScreen({ route }: Props) {
           {
             text: 'View orders',
             onPress: () =>
-              navigation.dispatch(
-                StackActions.popTo('MainTabs', {
-                  screen: 'Orders',
-                  params: { screen: 'OrdersList' },
-                }),
-              ),
+              // Drop Cart + Checkout and land on Orders, so back returns
+              // to the tabs rather than the now-empty cart.
+              navigation.dispatch(state => {
+                const tabsIndex = state.routes.findIndex(
+                  r => r.name === 'MainTabs',
+                );
+                const routes = [
+                  ...state.routes.slice(0, tabsIndex + 1),
+                  { name: 'Orders', params: { screen: 'OrdersList' } },
+                ];
+                return CommonActions.reset({
+                  ...state,
+                  routes,
+                  index: routes.length - 1,
+                });
+              }),
           },
         ],
       );

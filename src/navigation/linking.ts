@@ -22,14 +22,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
               CategoryItems: 'categories/:itemGroup',
             },
           },
-          Cart: 'cart',
-          Orders: {
-            screens: {
-              OrdersList: 'orders',
-              OrderDetails: 'orders/:orderId',
-            },
-          },
-          Profile: {screens: {ProfileHome: 'profile'}},
+          Explore: 'explore',
+          Services: 'services',
+        },
+      },
+      Cart: 'cart',
+      Orders: {
+        screens: {
+          OrdersList: 'orders',
+          OrderDetails: 'orders/:orderId',
         },
       },
       Wishlist: 'wishlist',

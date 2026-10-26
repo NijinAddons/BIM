@@ -232,6 +232,14 @@ export async function fetchProductBundles(): Promise<ProductBundle[]> {
   return [...basic, ...weeks];
 }
 
+/** Weekly kits launch on this day; no delivery goes out before it. */
+export const KIT_START_DATE = new Date(2026, 10, 1);
+
+/** False until the kits launch (orders before then are pre-orders). */
+export function kitsStarted(now: Date = new Date()): boolean {
+  return now >= KIT_START_DATE;
+}
+
 /** Week kit orders for a Saturday close at this hour on the Friday before. */
 export const KIT_ORDER_CUTOFF_HOUR = 17;
 
@@ -248,12 +256,16 @@ export function kitOrderCutoff(delivery: Date): Date {
 /**
  * The next Saturday still open for orders at `from`: the coming Saturday
  * until its Friday cutoff, then the one after (a week later if `from` is a
- * Saturday).
+ * Saturday). Never earlier than the first Saturday on or after
+ * KIT_START_DATE.
  */
 export function nextKitDeliveryDate(from: Date = new Date()): Date {
   const date = new Date(from.getFullYear(), from.getMonth(), from.getDate());
   date.setDate(date.getDate() + ((6 - date.getDay() + 7) % 7 || 7));
   if (from >= kitOrderCutoff(date)) {
+    date.setDate(date.getDate() + 7);
+  }
+  while (date < KIT_START_DATE) {
     date.setDate(date.getDate() + 7);
   }
   return date;

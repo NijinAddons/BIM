@@ -1,11 +1,12 @@
 import {
   keepPreviousData,
   queryOptions,
+  useInfiniteQuery,
   useQueries,
   useQuery,
   type QueryClient,
 } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   fetchBrands,
@@ -17,6 +18,7 @@ import {
   fetchItemsByBrand,
   fetchItemsByBrandGroup,
   fetchItemsByGroup,
+  fetchItemsByGroupPage,
   fetchItemsBySupplier,
   fetchQuotationRequest,
   fetchQuotationRequestsForUser,
@@ -45,6 +47,8 @@ export const queryKeys = {
   kitItem: (itemCode: string) => ['productBundles', 'item', itemCode] as const,
   items: ['items'] as const,
   itemsByGroup: (group: string) => ['items', 'group', group] as const,
+  itemsByGroupPages: (group: string) =>
+    ['items', 'group', group, 'pages'] as const,
   itemsByBrand: (brand: string) => ['items', 'brand', brand] as const,
   itemsByBrandGroup: (brand: string, group: string) =>
     ['items', 'brand', brand, 'group', group] as const,
@@ -131,6 +135,42 @@ export function useItemsByGroup(
     ...itemsByGroupQuery(group ?? ''),
     enabled: !!group && (options.enabled ?? true),
   });
+}
+
+// Items per page for lists that load more as they scroll.
+const GROUP_PAGE_SIZE = 20;
+const EMPTY_PAGE_ITEMS: CategoryItem[] = [];
+
+/** A group's items one page at a time; call `loadMore` near the list's end. */
+export function useItemsByGroupPages(
+  group: string | null | undefined,
+  options: { enabled?: boolean } = {},
+) {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.itemsByGroupPages(group ?? ''),
+    queryFn: ({ pageParam }) =>
+      fetchItemsByGroupPage(group!, pageParam, GROUP_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: lastPage => lastPage.nextStart ?? undefined,
+    enabled: !!group && (options.enabled ?? true),
+  });
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } = query;
+  const items = useMemo(
+    () => data?.pages.flatMap(page => page.items) ?? EMPTY_PAGE_ITEMS,
+    [data],
+  );
+
+  const loadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  return {
+    ...query,
+    items,
+    loadMore,
+  };
 }
 
 export function useItemsByBrand(

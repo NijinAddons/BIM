@@ -12,8 +12,14 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 
-import {ActionButton} from '../../components';
-import {completePhoneProfile, type AuthUser} from '../../services';
+import {ActionButton, GoogleIcon} from '../../components';
+import {
+  completePhoneProfile,
+  completePhoneProfileWithGoogle,
+  describeGoogleSignInError,
+  getGoogleAccount,
+  type AuthUser,
+} from '../../services';
 
 const BRAND_NAVY = '#1F2E3D';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -37,10 +43,12 @@ export default function ProfileDetailsScreen({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+  const isBusy = isSubmitting || isGoogleSubmitting;
   const isValid = name.trim().length >= 2 && EMAIL_PATTERN.test(email.trim());
 
   const onContinuePress = async () => {
-    if (!isValid || isSubmitting) {
+    if (!isValid || isBusy) {
       return;
     }
 
@@ -72,6 +80,46 @@ export default function ProfileDetailsScreen({
       Alert.alert('Could not save profile', 'Please check your connection and try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Name and email come from the picked Google account instead of the form.
+  const onGooglePress = async () => {
+    if (isBusy) {
+      return;
+    }
+
+    if (!phone || !profileToken) {
+      Alert.alert('Session expired', 'Please go back and verify your phone number again.');
+      return;
+    }
+
+    setIsGoogleSubmitting(true);
+
+    try {
+      const account = await getGoogleAccount();
+      if (!account) {
+        // User closed the account picker.
+        return;
+      }
+
+      const response = await completePhoneProfileWithGoogle(
+        account.idToken,
+        phone,
+        profileToken,
+        name.trim() || account.user.full_name,
+      );
+      if (!response.success || !response.session_token) {
+        throw new Error(response.message || 'Could not sign in with Google. Please try again.');
+      }
+      onSubmitted?.(
+        response.session_token,
+        response.user ?? {...account.user, mobile_no: phone},
+      );
+    } catch (error) {
+      Alert.alert('Google sign-in failed', describeGoogleSignInError(error));
+    } finally {
+      setIsGoogleSubmitting(false);
     }
   };
 
@@ -120,13 +168,34 @@ export default function ProfileDetailsScreen({
 
             <ActionButton
               active={isValid}
-              disabled={!isValid || isSubmitting}
+              disabled={!isValid || isBusy}
               label={isSubmitting ? 'Saving...' : 'Continue'}
               loading={isSubmitting}
               loadingColor={BRAND_NAVY}
               onPress={onContinuePress}
               style={[styles.continueButton, isValid ? styles.continueButtonActive : null]}
               textStyle={[styles.continueText, isValid ? styles.continueTextActive : null]}
+            />
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>or</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <ActionButton
+              accessory={(
+                <View style={styles.googleIconBadge}>
+                  <GoogleIcon size={16} />
+                </View>
+              )}
+              disabled={isBusy}
+              label="Continue with Google"
+              loading={isGoogleSubmitting}
+              onPress={onGooglePress}
+              style={styles.googleButton}
+              textStyle={styles.googleButtonText}
+              variant="secondary"
             />
           </View>
         </View>
@@ -192,5 +261,43 @@ const styles = StyleSheet.create({
   },
   continueTextActive: {
     color: BRAND_NAVY,
+  },
+  dividerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+  },
+  dividerLine: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    color: '#B9CBD8',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  googleButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#E4E8EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: 24,
+    paddingVertical: 14,
+  },
+  googleButtonText: {
+    color: BRAND_NAVY,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  googleIconBadge: {
+    alignItems: 'center',
+    backgroundColor: '#F5F7F8',
+    borderRadius: 999,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
   },
 });
